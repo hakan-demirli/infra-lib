@@ -47,7 +47,7 @@ let
   slurmAdditions =
     { isMaster }:
     {
-      imports = [ ../../modules/services/slurm.nix ];
+      imports = [ ../../../../services/slurm.nix ];
       services.slurm-cluster = {
         enable = true;
         inherit isMaster;

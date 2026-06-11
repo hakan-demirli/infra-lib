@@ -43,9 +43,9 @@ pkgs.testers.runNixOSTest {
       { ... }:
       {
         imports = [
-          ../modules/common/node-exporter.nix
-          ../modules/common/vector-shipper.nix
-          ../modules/services/victorialogs.nix
+          ../../../common/node-exporter.nix
+          ../../../common/vector-shipper.nix
+          ../../../services/victorialogs.nix
         ];
         _module.args = {
           host = {
@@ -71,8 +71,8 @@ pkgs.testers.runNixOSTest {
       { ... }:
       {
         imports = [
-          ../modules/common/node-exporter.nix
-          ../modules/common/vector-shipper.nix
+          ../../../common/node-exporter.nix
+          ../../../common/vector-shipper.nix
         ];
         _module.args = {
           host = {

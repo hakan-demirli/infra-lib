@@ -13,9 +13,9 @@ pkgs.testers.runNixOSTest {
       { ... }:
       {
         imports = [
-          ../modules/common/node-exporter.nix
-          ../modules/common/smartctl-exporter.nix
-          ../modules/common/ipmi-exporter.nix
+          ../../../common/node-exporter.nix
+          ../../../common/smartctl-exporter.nix
+          ../../../common/ipmi-exporter.nix
         ];
         _module.args.host = {
           id = "hwhost";
@@ -40,9 +40,9 @@ pkgs.testers.runNixOSTest {
       { ... }:
       {
         imports = [
-          ../modules/common/node-exporter.nix
-          ../modules/common/smartctl-exporter.nix
-          ../modules/common/ipmi-exporter.nix
+          ../../../common/node-exporter.nix
+          ../../../common/smartctl-exporter.nix
+          ../../../common/ipmi-exporter.nix
         ];
         _module.args.host = {
           id = "control";

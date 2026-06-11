@@ -27,10 +27,10 @@ pkgs.testers.runNixOSTest {
     { ... }:
     {
       imports = [
-        ../modules/common/node-exporter.nix
-        ../modules/services/victoriametrics.nix
-        ../modules/services/vmalert.nix
-        ../modules/services/alertmanager.nix
+        ../../../common/node-exporter.nix
+        ../../../services/victoriametrics.nix
+        ../../../services/vmalert.nix
+        ../../../services/alertmanager.nix
       ];
       _module.args = {
         inherit self;

@@ -171,8 +171,8 @@ pkgs.testers.runNixOSTest {
     {
       imports = [
         inputs.sops-nix.nixosModules.sops
-        ../modules/common/cluster-users.nix
-        ../modules/common/sshd.nix
+        ../../../common/cluster-users.nix
+        ../../../common/sshd.nix
       ];
 
       _module.args = {

@@ -29,7 +29,7 @@ pkgs.testers.runNixOSTest {
           hostName = "controller";
           inherit clusterNodes;
         })
-        ../modules/services/slurm-metrics.nix
+        ../../../services/slurm-metrics.nix
       ];
       services.cluster-slurm-metrics.enable = true;
     };

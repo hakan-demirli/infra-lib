@@ -47,7 +47,7 @@ let
   storageANode =
     { pkgs, ... }:
     {
-      imports = [ ../modules/services/ceph-exporter.nix ];
+      imports = [ ../../../services/ceph-exporter.nix ];
 
       virtualisation = {
         emptyDiskImages = [ 20480 ];

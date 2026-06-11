@@ -159,7 +159,7 @@ rec {
     { hostName, clusterNodes }:
     { lib, ... }:
     {
-      imports = [ ../modules/services/slurm.nix ];
+      imports = [ ../../../services/slurm.nix ];
       networking.hostName = lib.mkForce hostName;
       networking.firewall.enable = lib.mkForce false;
       services.slurm-cluster = {
@@ -189,7 +189,7 @@ rec {
     }:
     { lib, ... }:
     {
-      imports = [ ../modules/services/slurm.nix ];
+      imports = [ ../../../services/slurm.nix ];
       networking.hostName = lib.mkForce hostName;
       networking.firewall.enable = lib.mkForce false;
       services.slurm-cluster = {
@@ -214,7 +214,7 @@ rec {
     }:
     { lib, ... }:
     {
-      imports = [ ../modules/services/slurm-client.nix ];
+      imports = [ ../../../services/slurm-client.nix ];
       networking.hostName = lib.mkForce hostName;
       networking.firewall.enable = lib.mkForce false;
       networking.extraHosts = clusterHosts;

@@ -26,8 +26,8 @@ pkgs.testers.runNixOSTest {
     { ... }:
     {
       imports = [
-        ../modules/common/node-exporter.nix
-        ../modules/services/victoriametrics.nix
+        ../../../common/node-exporter.nix
+        ../../../services/victoriametrics.nix
       ];
 
       _module.args = {

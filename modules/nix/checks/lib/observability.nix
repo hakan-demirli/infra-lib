@@ -41,9 +41,9 @@ let
     { ... }:
     {
       imports = [
-        ../modules/common/node-exporter.nix
-        ../modules/services/victoriametrics.nix
-        ../modules/services/grafana.nix
+        ../../../common/node-exporter.nix
+        ../../../services/victoriametrics.nix
+        ../../../services/grafana.nix
       ];
       _module.args = {
         host = {
@@ -72,7 +72,7 @@ let
     };
 
   mkWorker = name: {
-    imports = [ ../modules/common/node-exporter.nix ];
+    imports = [ ../../../common/node-exporter.nix ];
     _module.args = {
       host = {
         id = name;

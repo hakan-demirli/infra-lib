@@ -34,6 +34,6 @@
   };
 
   environment.systemPackages = [
-    (pkgs.callPackage ../../../pkgs/derivations/sddm-astronaut.nix { })
+    (pkgs.callPackage ../../pkgs/nix/sddm-astronaut.nix { })
   ];
 }
