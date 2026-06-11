@@ -1,0 +1,128 @@
+{
+  pkgs,
+  self,
+  inputs,
+}:
+let
+  inherit (pkgs) lib;
+  inherit (pkgs.stdenv.hostPlatform) system;
+
+  evalModule =
+    module: extraModule:
+    (inputs.nixpkgs.lib.nixosSystem {
+      inherit system;
+      specialArgs = {
+        inherit inputs;
+        host = null;
+        cluster = null;
+      };
+      modules = [
+        inputs.impermanence.nixosModules.impermanence
+        (self + module)
+        {
+          boot.isContainer = true;
+          system.stateVersion = "26.05";
+        }
+        extraModule
+      ];
+    }).config;
+
+  hasFailure =
+    needle: evaluated:
+    lib.any (
+      assertion: !assertion.assertion && lib.hasInfix needle assertion.message
+    ) evaluated.assertions;
+
+  roleIdentity = evalModule "/modules/common/role-identity.nix" { };
+  bluetooth = evalModule "/modules/system/bluetooth.nix" { };
+  bluetoothSleepState = bluetooth.systemd.services.bluetooth-sleep-state;
+  bluetoothStateTool = lib.removeSuffix " save" bluetoothSleepState.serviceConfig.ExecStart;
+
+  checks = {
+    role-identity-does-not-mask-persistent-state = !(roleIdentity.fileSystems ? "/persist/system");
+    bluetooth-keeps-explicit-power-policy =
+      bluetooth.hardware.bluetooth.enable
+      && !bluetooth.hardware.bluetooth.powerOnBoot
+      && bluetooth.hardware.bluetooth.settings.Policy.AutoEnable == "false";
+    bluetooth-preserves-state-around-sleep =
+      lib.elem "bluetooth.service" bluetoothSleepState.wants
+      && lib.elem "bluetooth.service" bluetoothSleepState.after
+      && lib.elem "tlp-sleep.service" bluetoothSleepState.before
+      && lib.elem "sleep.target" bluetoothSleepState.before
+      && bluetoothSleepState.wantedBy == [ "sleep.target" ]
+      && bluetoothSleepState.unitConfig.StopWhenUnneeded
+      && bluetoothSleepState.serviceConfig.Type == "oneshot"
+      && bluetoothSleepState.serviceConfig.RemainAfterExit
+      && bluetoothSleepState.serviceConfig.RuntimeDirectoryMode == "0700";
+    reverse-ssh-client-disabled-payload = hasFailure "payload is configured" (
+      evalModule "/modules/services/reverse-ssh-client.nix" {
+        services.reverse-ssh-client.remoteHost = "gateway.example";
+      }
+    );
+    reverse-ssh-server-disabled-payload = hasFailure "requires enable=true" (
+      evalModule "/modules/services/reverse-ssh-server.nix" {
+        services.reverse-ssh-server.allowedTCPPorts = [ 2200 ];
+      }
+    );
+    github-runner-disabled-payload = hasFailure "payload is configured" (
+      evalModule "/modules/services/github-runner.nix" {
+        cluster.githubRunner.url = "https://github.com/example";
+      }
+    );
+    headscale-disabled-payload = hasFailure "payload is configured" (
+      evalModule "/modules/services/headscale.nix" {
+        services.headscale-server.serverUrl = "headscale.example";
+      }
+    );
+    auto-upgrade-disabled-payload = hasFailure "payload is configured" (
+      evalModule "/modules/common/auto-upgrade.nix" {
+        cluster.autoUpgrade.onCalendar = "hourly";
+      }
+    );
+    server-base-disabled-payload = hasFailure "requires system.server.enable=true" (
+      evalModule "/modules/system/server-base.nix" {
+        system.server = {
+          enable = false;
+          hostName = "ignored.example";
+        };
+      }
+    );
+    slurm-metrics-disabled-payload = hasFailure "requires enable=true" (
+      evalModule "/modules/services/slurm-metrics.nix" {
+        services.cluster-slurm-metrics.listenPort = 9999;
+      }
+    );
+    ceph-exporter-disabled-payload = hasFailure "payload is configured" (
+      evalModule "/modules/services/ceph-exporter.nix" {
+        services.cluster-ceph-exporter.mgrInstance = "mgr-0";
+      }
+    );
+    remotedesktop-disabled-payload = hasFailure "must be set exactly when mode is headless" (
+      evalModule "/modules/services/desktop/remotedesktop.nix" {
+        services.remotedesktop.connector = "HDMI-A-1";
+      }
+    );
+  };
+
+  failures = lib.attrNames (lib.filterAttrs (_: passed: !passed) checks);
+in
+pkgs.runCommand "module-contracts"
+  {
+    failureCount = toString (lib.length failures);
+    failureNames = lib.concatStringsSep "," failures;
+    inherit bluetoothStateTool;
+  }
+  ''
+    if [ "$failureCount" != 0 ]; then
+      echo "failed module contracts: $failureNames" >&2
+      exit 1
+    fi
+    test -x "$bluetoothStateTool"
+    grep -q GetManagedObjects "$bluetoothStateTool"
+    grep -q org.bluez.Adapter1 "$bluetoothStateTool"
+    if grep -q /org/bluez/hci "$bluetoothStateTool"; then
+      echo "Bluetooth state helper hardcodes an adapter path" >&2
+      exit 1
+    fi
+    touch "$out"
+  ''
