@@ -14,10 +14,11 @@ let
     pgPassword = "headscale-test-password-not-secret";
   };
 
-  aclFile = pkgs.writeText "headscale-ha.hujson" (
-    builtins.toJSON {
+  aclFile = testlib.writeHeadscalePolicy {
+    name = "headscale-ha.hujson";
+    policy = {
       groups = {
-        "group:mesh" = [ "testuser@" ];
+        "group:mesh" = [ "testuser" ];
       };
       tagOwners = { };
       acls = [
@@ -27,8 +28,8 @@ let
           dst = [ "group:mesh:*" ];
         }
       ];
-    }
-  );
+    };
+  };
 
   mkHeadscaleSettings = _nodeIp: {
     server_url = "https://headscale-a";

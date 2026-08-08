@@ -2,10 +2,11 @@
 let
   testlib = import ./lib.nix { inherit pkgs; };
 
-  aclFile = pkgs.writeText "bootstrap-tag.hujson" (
-    builtins.toJSON {
+  aclFile = testlib.writeHeadscalePolicy {
+    name = "bootstrap-tag.hujson";
+    policy = {
       groups = {
-        "group:admin" = [ "owner@" ];
+        "group:admin" = [ "owner" ];
       };
       tagOwners = {
         "tag:bootstrap" = [ "group:admin" ];
@@ -26,8 +27,8 @@ let
           dst = [ "tag:cluster-priv-compute:*" ];
         }
       ];
-    }
-  );
+    };
+  };
 in
 pkgs.testers.runNixOSTest {
   name = "bootstrap-tag";

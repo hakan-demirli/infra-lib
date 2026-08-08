@@ -1,6 +1,7 @@
 { pkgs }:
 let
   inherit (pkgs) lib;
+  headscalePolicy = import ../../../lib/headscale-policy.nix { inherit lib; };
 in
 rec {
   headscaleIp = "192.168.1.1";
@@ -28,6 +29,21 @@ rec {
             stunport: 3478
             derpport: 443
   '';
+
+  writeHeadscalePolicy =
+    {
+      name,
+      policy,
+      comments ? [ ],
+    }:
+    headscalePolicy.write {
+      inherit
+        pkgs
+        name
+        policy
+        comments
+        ;
+    };
 
   mkHeadscaleNode =
     { aclFile }:

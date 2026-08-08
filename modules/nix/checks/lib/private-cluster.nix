@@ -5,10 +5,11 @@
 let
   testlib = import ./lib.nix { inherit pkgs; };
 
-  aclFile = pkgs.writeText "private-cluster.hujson" (
-    builtins.toJSON {
+  aclFile = testlib.writeHeadscalePolicy {
+    name = "private-cluster.hujson";
+    policy = {
       groups = {
-        "group:admin" = [ "owner@" ];
+        "group:admin" = [ "owner" ];
       };
       tagOwners = {
         "tag:cluster-priv" = [ "group:admin" ];
@@ -41,8 +42,8 @@ let
           dst = [ "tag:cluster-priv-controller:*" ];
         }
       ];
-    }
-  );
+    };
+  };
 
   clusterHosts = ''
     192.168.1.1 headscale

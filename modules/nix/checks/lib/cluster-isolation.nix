@@ -5,11 +5,12 @@
 let
   testlib = import ./lib.nix { inherit pkgs; };
 
-  aclFile = pkgs.writeText "cluster-isolation.hujson" (
-    builtins.toJSON {
+  aclFile = testlib.writeHeadscalePolicy {
+    name = "cluster-isolation.hujson";
+    policy = {
       groups = {
-        "group:admin" = [ "owner@" ];
-        "group:team-shared" = [ "shared-user@" ];
+        "group:admin" = [ "owner" ];
+        "group:team-shared" = [ "shared-user" ];
       };
       tagOwners = {
         "tag:cluster-priv-compute" = [ "group:admin" ];
@@ -43,8 +44,8 @@ let
           dst = [ "tag:cluster-shared-compute:*" ];
         }
       ];
-    }
-  );
+    };
+  };
 
   mkBareNode =
     { extraUpFlags }:

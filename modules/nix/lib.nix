@@ -2,6 +2,11 @@
 let
   libDir = ../lib;
 
+  hujson = import (libDir + "/hujson.nix") { inherit lib; };
+  headscalePolicy = import (libDir + "/headscale-policy.nix") {
+    inherit lib hujson;
+  };
+
   mkTypes = { lib }: import (libDir + "/types.nix") { inherit lib; };
 
   mkInventory =
@@ -12,7 +17,11 @@ let
     }:
     import (libDir + "/inventory.nix") { inherit lib self types; };
 
-  mkCodegen = { lib, inventory }: import (libDir + "/codegen.nix") { inherit lib inventory; };
+  mkCodegen =
+    { lib, inventory }:
+    import (libDir + "/codegen.nix") {
+      inherit lib inventory headscalePolicy;
+    };
 
   mkIntent = { lib, inventory }: import (libDir + "/intent.nix") { inherit lib inventory; };
 
@@ -140,6 +149,8 @@ in
   flake.lib = {
     types = mkTypes;
     inherit
+      hujson
+      headscalePolicy
       mkInventory
       mkCodegen
       mkIntent

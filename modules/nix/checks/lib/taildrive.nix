@@ -2,10 +2,11 @@
 let
   testlib = import ./lib.nix { inherit pkgs; };
 
-  aclFile = pkgs.writeText "taildrive.hujson" (
-    builtins.toJSON {
+  aclFile = testlib.writeHeadscalePolicy {
+    name = "taildrive.hujson";
+    policy = {
       groups = {
-        "group:admin" = [ "owner@" ];
+        "group:admin" = [ "owner" ];
       };
       tagOwners = {
         "tag:bootstrap" = [ "group:admin" ];
@@ -52,8 +53,8 @@ let
           };
         }
       ];
-    }
-  );
+    };
+  };
 
   mkPeer =
     { extraUpFlags }:

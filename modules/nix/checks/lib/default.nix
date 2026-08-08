@@ -31,6 +31,8 @@
   headscale-ha-shared-state-via-postgres = import ./headscale-ha-shared-state-via-postgres.nix {
     inherit pkgs;
   };
+  headscale-policy = import ./headscale-policy.nix { inherit pkgs self; };
+  headscale-codegen = import ./headscale-codegen.nix { inherit pkgs self; };
   slurm-on-cephfs-job-roundtrip = import ./slurm-on-cephfs-job-roundtrip.nix { pkgs = cephPkgs; };
   slurm-on-cephfs-output-readable-from-other-compute =
     import ./slurm-on-cephfs-output-readable-from-other-compute.nix
