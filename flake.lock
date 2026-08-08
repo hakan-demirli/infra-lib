@@ -170,6 +170,22 @@
         "type": "github"
       }
     },
+    "nixpkgs-ceph": {
+      "locked": {
+        "lastModified": 1782604749,
+        "narHash": "sha256-lklHtL+Su8MyB5U+wj/URZI/Nn64a7VXp4T1hHZR6l8=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "892439827cd72d4a390a3f341f19c2a0224b83b0",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "892439827cd72d4a390a3f341f19c2a0224b83b0",
+        "type": "github"
+      }
+    },
     "nixpkgs_2": {
       "locked": {
         "lastModified": 1767892417,
@@ -243,6 +259,7 @@
         "nix-darwin": "nix-darwin",
         "nixos-hardware": "nixos-hardware",
         "nixpkgs": "nixpkgs_3",
+        "nixpkgs-ceph": "nixpkgs-ceph",
         "nur": "nur",
         "sops-nix": "sops-nix",
         "srvos": "srvos"

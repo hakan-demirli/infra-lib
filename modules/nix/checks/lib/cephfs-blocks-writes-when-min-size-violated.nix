@@ -30,18 +30,25 @@ pkgs.testers.runNixOSTest {
             "ceph osd stat | grep -E '3 osds: 1 up'", timeout=120
         )
 
-    with subtest("write attempt blocks (does not succeed)"):
-        rc, out = client_1.execute(
-            "timeout 20 sh -c 'echo blocked-write > /mnt/ceph/blocked.txt && sync /mnt/ceph/blocked.txt'"
+    with subtest("write attempt remains blocked"):
+        client_1.succeed(
+            "rm -f /tmp/blocked-write-completed && "
+            "systemd-run --unit=cephfs-blocked-write --property=Type=oneshot "
+            "--no-block sh -c 'echo blocked-write > /mnt/ceph/blocked.txt "
+            "&& sync /mnt/ceph/blocked.txt "
+            "&& touch /tmp/blocked-write-completed'"
         )
-        assert rc != 0, (
-            f"SAFETY VIOLATION: write succeeded with 2-of-3 OSDs "
-            f"unreachable. min_size=2 should have BLOCKED this. "
-            f"rc={rc}, output={out!r}. "
-            f"Split-brain risk: the single surviving OSD now has "
-            f"data the rest of the cluster doesn't know about."
+        client_1.succeed("sleep 10")
+        client_1.fail("test -e /tmp/blocked-write-completed")
+        state = client_1.succeed(
+            "systemctl show -p ActiveState --value cephfs-blocked-write.service"
+        ).strip()
+        assert state == "activating", (
+            f"SAFETY VIOLATION: write did not remain blocked with 2-of-3 OSDs "
+            f"unreachable. min_size=2 requires the write to block, but the "
+            f"transient unit state is {state!r}."
         )
-        print(f"INVARIANT HELD: write blocked when min_size=2 cannot "
-              f"be satisfied (rc={rc}, expected non-zero / timeout)")
+        print("INVARIANT HELD: write remains blocked when min_size=2 cannot be satisfied")
+        client_1.crash()
   '';
 }

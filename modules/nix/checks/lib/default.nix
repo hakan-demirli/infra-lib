@@ -1,5 +1,6 @@
 {
   pkgs,
+  cephPkgs ? pkgs,
   self,
   inputs,
   ...
@@ -30,13 +31,13 @@
   headscale-ha-shared-state-via-postgres = import ./headscale-ha-shared-state-via-postgres.nix {
     inherit pkgs;
   };
-  slurm-on-cephfs-job-roundtrip = import ./slurm-on-cephfs-job-roundtrip.nix { inherit pkgs; };
+  slurm-on-cephfs-job-roundtrip = import ./slurm-on-cephfs-job-roundtrip.nix { pkgs = cephPkgs; };
   slurm-on-cephfs-output-readable-from-other-compute =
     import ./slurm-on-cephfs-output-readable-from-other-compute.nix
-      { inherit pkgs; };
+      { pkgs = cephPkgs; };
   slurm-on-cephfs-concurrent-jobs-dont-interfere =
     import ./slurm-on-cephfs-concurrent-jobs-dont-interfere.nix
-      { inherit pkgs; };
+      { pkgs = cephPkgs; };
   slurm-ha-shared-queue-state = import ./slurm-ha-shared-queue-state.nix { inherit pkgs; };
   slurm-ha-failover-on-primary-death = import ./slurm-ha-failover-on-primary-death.nix {
     inherit pkgs;
@@ -58,7 +59,10 @@
   bootstrap-tag = import ./bootstrap-tag.nix { inherit pkgs; };
   taildrive = import ./taildrive.nix { inherit pkgs; };
   harmonia = import ./harmonia.nix { inherit pkgs; };
-  cephfs = import ./cephfs.nix { inherit pkgs self; };
+  cephfs = import ./cephfs.nix {
+    pkgs = cephPkgs;
+    inherit self;
+  };
   dev-fpga = import ./dev-fpga.nix { inherit pkgs self inputs; };
   access-tiers = import ./access-tiers.nix { inherit pkgs self inputs; };
   observability = import ./observability.nix { inherit pkgs self inputs; };
@@ -68,30 +72,30 @@
   hardware-health = import ./hardware-health.nix { inherit pkgs self inputs; };
   slurm-metrics = import ./slurm-metrics.nix { inherit pkgs self inputs; };
   cephfs-replicated-read-cross-client = import ./cephfs-replicated-read-cross-client.nix {
-    inherit pkgs;
+    pkgs = cephPkgs;
   };
   cephfs-fsync-durability-across-graceful-shutdown =
     import ./cephfs-fsync-durability-across-graceful-shutdown.nix
-      { inherit pkgs; };
+      { pkgs = cephPkgs; };
   cephfs-fsync-durability-across-hard-crash = import ./cephfs-fsync-durability-across-hard-crash.nix {
-    inherit pkgs;
+    pkgs = cephPkgs;
   };
   cephfs-writes-available-with-one-storage-down =
     import ./cephfs-writes-available-with-one-storage-down.nix
-      { inherit pkgs; };
+      { pkgs = cephPkgs; };
   cephfs-blocks-writes-when-min-size-violated =
     import ./cephfs-blocks-writes-when-min-size-violated.nix
-      { inherit pkgs; };
+      { pkgs = cephPkgs; };
   cephfs-mon-rejoin-after-graceful-shutdown = import ./cephfs-mon-rejoin-after-graceful-shutdown.nix {
-    inherit pkgs;
+    pkgs = cephPkgs;
   };
   cephfs-mon-rejoin-after-hard-crash = import ./cephfs-mon-rejoin-after-hard-crash.nix {
-    inherit pkgs;
+    pkgs = cephPkgs;
   };
   cephfs-osd-rejoin-after-graceful-shutdown = import ./cephfs-osd-rejoin-after-graceful-shutdown.nix {
-    inherit pkgs;
+    pkgs = cephPkgs;
   };
   cephfs-osd-rejoin-after-hard-crash = import ./cephfs-osd-rejoin-after-hard-crash.nix {
-    inherit pkgs;
+    pkgs = cephPkgs;
   };
 }

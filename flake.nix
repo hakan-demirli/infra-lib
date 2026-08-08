@@ -7,6 +7,8 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    # Ceph 20.2.2 is broken in newer nixpkgs revisions until nixpkgs#548582 lands.
+    nixpkgs-ceph.url = "github:NixOS/nixpkgs/892439827cd72d4a390a3f341f19c2a0224b83b0";
     flake-parts = {
       url = "github:hercules-ci/flake-parts";
       inputs.nixpkgs-lib.follows = "nixpkgs";

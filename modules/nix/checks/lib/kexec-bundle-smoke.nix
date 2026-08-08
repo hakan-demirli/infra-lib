@@ -45,9 +45,7 @@ pkgs.runCommand "kexec-bundle-smoke"
       || fail "netbootRamdisk missing /initrd file"
     pass "netbootRamdisk has /initrd"
 
-    ${pkgs.binutils}/bin/strings "$bundlePath" | head -1000 > /tmp/strings.head
-
-    grep -q kexec /tmp/strings.head \
+    grep -a -q kexec "$bundlePath" \
       || fail "bundle does not mention kexec (suspicious; binary may be malformed)"
     pass "bundle references kexec"
 

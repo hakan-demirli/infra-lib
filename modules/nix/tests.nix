@@ -3,8 +3,13 @@
   perSystem =
     { pkgs, system, ... }:
     let
+      cephPkgs = pkgs.extend (
+        _final: _prev: {
+          inherit (inputs.nixpkgs-ceph.legacyPackages.${system}) ceph;
+        }
+      );
       testSuite = import ./checks/lib {
-        inherit pkgs inputs;
+        inherit pkgs inputs cephPkgs;
         inherit (inputs) self;
       };
     in
