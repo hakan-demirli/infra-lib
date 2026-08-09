@@ -30,6 +30,41 @@ let
     if t != null then stripTag t else "cluster-${cid}";
 
   broadTagOf = cid: "tag:${baseOfCluster cid}";
+  fleetAdminTag = "tag:fleet-admin-client";
+  adminClientHosts = filter (
+    h:
+    elem "admin-client" (h.topology_roles or [ ])
+    && !(elem h.state [
+      "retired"
+      "decommissioned"
+    ])
+  ) (attrValues hosts);
+  hasAdminClients = adminClientHosts != [ ];
+  exporterPortMap = {
+    node = 9100;
+    smartctl = 9633;
+    ipmi = 9290;
+    "lm-sensors" = 9100;
+    ceph = 9128;
+    slurm = 6817;
+    zfs = 9134;
+  };
+  adminMonitoringPorts = unique (
+    concatMap (
+      h:
+      if h.monitoring.enabled or true then
+        filter (port: port != null) (
+          map (exporter: exporterPortMap.${exporter} or null) (h.monitoring.exporters or [ ])
+        )
+      else
+        [ ]
+    ) adminClientHosts
+  );
+  userOwnsAdminClient =
+    uid:
+    any (
+      h: (h.ownership.owner or null) == uid || (h.ownership.operator or null) == uid
+    ) adminClientHosts;
 
   loginTagOf =
     cid:
@@ -45,6 +80,13 @@ let
     in
     if (computeNodesOfCluster.${cid} or [ ]) != [ ] then "tag:${base}-compute" else null;
 
+  controllerTagOf =
+    cid:
+    if (controllerNodesOfCluster.${cid} or [ ]) != [ ] then
+      "tag:${baseOfCluster cid}-controller"
+    else
+      null;
+
   storageTagOf =
     cid:
     let
@@ -58,7 +100,9 @@ let
       cid = hostToCluster.${hid} or null;
       nrs = hostTopologyRoles.${hid} or [ ];
     in
-    if cid == null then
+    if elem "admin-client" nrs then
+      [ fleetAdminTag ]
+    else if cid == null then
       [ ]
     else
       let
@@ -103,9 +147,21 @@ let
     port = dstPort;
   };
 
-  adminRules = map (cid: mkRule [ "group:admin" ] (broadTagOf cid) "*" "admin") (
-    attrNames activeClusters
-  );
+  adminRules = map (
+    cid:
+    mkRule [ (if hasAdminClients then fleetAdminTag else "group:admin") ] (broadTagOf cid) "*" "admin"
+  ) (attrNames activeClusters);
+
+  monitoringRules = concatMap (
+    cid:
+    let
+      controllerTag = controllerTagOf cid;
+    in
+    if !hasAdminClients || controllerTag == null then
+      [ ]
+    else
+      map (port: mkRule [ controllerTag ] fleetAdminTag (toString port) "monitoring") adminMonitoringPorts
+  ) (attrNames activeClusters);
 
   meshRules = concatMap (
     cid:
@@ -211,6 +267,7 @@ let
 
   aclRules =
     adminRules
+    ++ monitoringRules
     ++ meshRules
     ++ loginToComputeRules
     ++ computeToStorageRulesIntra
@@ -225,7 +282,7 @@ let
     uid: hid: port:
     let
       uGroups = userGroups.${uid} or [ ];
-      uSelfTags = [ uid ];
+      uSelfTags = [ uid ] ++ optional (userOwnsAdminClient uid) fleetAdminTag;
       hTags = hostPolicyTags.${hid} or [ ];
       srcMatches = rule: any (s: elem s uGroups || elem s uSelfTags) rule.src;
       dstMatches = rule: elem rule.dst hTags && (rule.port == "*" || port == "*" || rule.port == port);
@@ -353,8 +410,11 @@ let
     let
       h = hosts.${g.host};
       intent = h.ssh_trust_intent.${g.account} or null;
-      allowPaths = if intent == null then [ "tailnet" ] else intent.allow_paths;
-      requireTailnet = elem "tailnet" allowPaths;
+      requireTailnet =
+        if intent == null then
+          !(elem "admin-client" (h.topology_roles or [ ]))
+        else
+          elem "tailnet" intent.allow_paths;
       reachable = canUserReach g.user g.host "22";
     in
     if requireTailnet && !reachable then

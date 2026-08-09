@@ -228,6 +228,36 @@ in
         )) "tag:${base}-controller");
 
       broadTagOf = cid: "tag:${baseOf cid}";
+      fleetAdminTag = "tag:fleet-admin-client";
+      adminClientHosts = filter (
+        h:
+        elem "admin-client" (h.topology_roles or [ ])
+        && !(elem h.state [
+          "retired"
+          "decommissioned"
+        ])
+      ) (attrValues hosts);
+      hasAdminClients = adminClientHosts != [ ];
+      exporterPortMap = {
+        node = 9100;
+        smartctl = 9633;
+        ipmi = 9290;
+        "lm-sensors" = 9100;
+        ceph = 9128;
+        slurm = 6817;
+        zfs = 9134;
+      };
+      adminMonitoringPorts = unique (
+        concatMap (
+          h:
+          if h.monitoring.enabled or true then
+            filter (port: port != null) (
+              map (exporter: exporterPortMap.${exporter} or null) (h.monitoring.exporters or [ ])
+            )
+          else
+            [ ]
+        ) adminClientHosts
+      );
 
       loginTagOf =
         cid:
@@ -242,6 +272,15 @@ in
           base = baseOf cid;
         in
         if (inventory.computeNodesOfCluster.${cid} or [ ]) != [ ] then "tag:${base}-compute" else null;
+      controllerTagOf =
+        cid:
+        let
+          base = baseOf cid;
+        in
+        if (inventory.controllerNodesOfCluster.${cid} or [ ]) != [ ] then
+          "tag:${base}-controller"
+        else
+          null;
       storageTagOf =
         cid:
         let
@@ -277,13 +316,28 @@ in
           "tag:bootstrap" = [ "group:admin" ];
           "tag:drive-share" = [ "group:admin" ];
           "tag:drive-access" = [ "group:admin" ];
+        }
+        // optionalAttrs hasAdminClients {
+          ${fleetAdminTag} = [ "group:admin" ];
         };
 
       adminRule = {
         action = "accept";
-        src = [ "group:admin" ];
+        src = [ (if hasAdminClients then fleetAdminTag else "group:admin") ];
         dst = (map (cid: "${broadTagOf cid}:*") (attrNames activeClusters)) ++ [ "tag:bootstrap:*" ];
       };
+
+      monitoringRules = concatMap (
+        cid:
+        let
+          controllerTag = controllerTagOf cid;
+        in
+        optional (hasAdminClients && controllerTag != null && adminMonitoringPorts != [ ]) {
+          action = "accept";
+          src = [ controllerTag ];
+          dst = map (port: "${fleetAdminTag}:${toString port}") adminMonitoringPorts;
+        }
+      ) (attrNames activeClusters);
 
       driveRule = {
         action = "accept";
@@ -455,6 +509,7 @@ in
         adminRule
         driveRule
       ]
+      ++ monitoringRules
       ++ computeMeshRules
       ++ loginToComputeRules
       ++ computeToStorageRules

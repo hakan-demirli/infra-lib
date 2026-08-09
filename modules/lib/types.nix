@@ -30,6 +30,7 @@ let
   ];
 
   topologyRole = enum [
+    "admin-client"
     "compute"
     "login"
     "storage"
@@ -1028,7 +1029,9 @@ let
           Per-target ssh_trust intent annotations. Keys mirror keys
           of `ssh_trust`. Targets without an entry default to
           `allow_paths = ["tailnet"]`, i.e. intent-check requires a
-          headscale ACL match.
+          headscale ACL match. Hosts with the `admin-client` topology
+          role are exempt from that default because they do not accept
+          inbound Tailnet SSH.
         '';
       };
       virt = mkOption {
