@@ -18,7 +18,8 @@ let
     cluster = "lab";
     labels = { };
     state = "provisioned";
-    roles = [ "virt-host" ];
+    deployment_roles = [ "virt-host" ];
+    topology_roles = [ "compute" ];
     hardware = {
       arch = "x86_64-linux";
       os = "linux";
@@ -74,7 +75,8 @@ let
       kind = "kvm-guest";
       host = "virt-host-1";
     };
-    roles = [ "vm-guest-ubuntu" ];
+    deployment_roles = [ "vm-guest-ubuntu" ];
+    topology_roles = [ "compute" ];
     virt = {
       enable = false;
       role = "guest";
@@ -102,7 +104,7 @@ let
       };
     };
     usersOnHost = { };
-    accessTiers = { };
+    unixAccessTiers = { };
   };
 
   ambient = {

@@ -7,7 +7,7 @@
 }:
 {
   inventory-validation = import ./inventory-validation.nix { inherit pkgs self; };
-  role-secrets = import ./role-secrets.nix { inherit pkgs self; };
+  deployment-role-secrets = import ./deployment-role-secrets.nix { inherit pkgs self; };
   disko-wiring = import ./disko-wiring.nix { inherit pkgs self; };
   disko-installer-contract = import ./disko-installer-contract.nix { inherit pkgs self; };
   impermanence-contract = import ./impermanence-contract.nix {
@@ -22,9 +22,9 @@
   module-contracts = import ./module-contracts.nix {
     inherit pkgs self inputs;
   };
-  lib-multiroot = import ./lib-multiroot.nix { inherit pkgs self; };
+  explicit-module-resolution = import ./explicit-module-resolution.nix { inherit pkgs self; };
   cluster-fs-modules-smoke = import ./cluster-fs-modules-smoke.nix { inherit pkgs self; };
-  mkrole-determinism = import ./mkrole-determinism.nix { inherit pkgs self; };
+  mkhost-determinism = import ./mkhost-determinism.nix { inherit pkgs self; };
   ssh-key-rotation = import ./ssh-key-rotation.nix { inherit pkgs self; };
   user-offboarding = import ./user-offboarding.nix { inherit pkgs self; };
   virt-host-smoke = import ./virt-host-smoke.nix { inherit pkgs self; };
@@ -66,7 +66,7 @@
     inherit self;
   };
   dev-fpga = import ./dev-fpga.nix { inherit pkgs self inputs; };
-  access-tiers = import ./access-tiers.nix { inherit pkgs self inputs; };
+  unix-access-tiers = import ./unix-access-tiers.nix { inherit pkgs self inputs; };
   observability = import ./observability.nix { inherit pkgs self inputs; };
   analytics = import ./analytics.nix { inherit pkgs self inputs; };
   logs = import ./logs.nix { inherit pkgs self inputs; };

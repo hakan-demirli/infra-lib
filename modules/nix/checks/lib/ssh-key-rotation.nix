@@ -56,7 +56,7 @@ let
     rotating-user = {
       id = "rotating-user";
       kind = "human";
-      cohort = "admin";
+      cohort = "staff";
       allowed_hosts = [ "all" ];
       xrdp_access = false;
       expires = null;
@@ -84,19 +84,20 @@ let
     usersOnHost.host-rot = [
       {
         user = "rotating-user";
-        tier = "admin";
+        unix_tier = "admin";
         via_team = null;
         via_team_role = null;
         can_submit_to = [ ];
       }
     ];
-    accessTiers = {
+    unixAccessTiers = {
       admin = {
         ssh = {
           allowed = true;
         };
-        sudo = "NOPASSWD:ALL";
-        extra_groups = [ "wheel" ];
+        sudo.extra_rule = "NOPASSWD:ALL";
+        groups = [ "wheel" ];
+        root_ssh = true;
       };
     };
   };

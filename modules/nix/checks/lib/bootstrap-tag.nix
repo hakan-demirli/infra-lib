@@ -105,6 +105,22 @@ pkgs.testers.runNixOSTest {
         bootstrap_a.fail(f"ping -c 2 -W 2 {priv_ip}")
         bootstrap_b.fail(f"ping -c 2 -W 2 {priv_ip}")
 
+    with subtest("verified node gains cluster access only after explicit manual promotion"):
+        nodes = json.loads(headscale.succeed("headscale nodes list --output json"))
+        promoted = next(
+            node for node in nodes
+            if "bootstrap-a" in {
+                node.get("name"),
+                node.get("given_name"),
+                node.get("hostname"),
+            }
+        )
+        headscale.succeed(
+            f"headscale nodes tag -i {promoted['id']} -t tag:cluster-priv-compute"
+        )
+        bootstrap_a.wait_until_succeeds(f"ping -c 2 {priv_ip}")
+        bootstrap_a.fail(f"ping -c 2 -W 2 {boot_b_ip}")
+
     with subtest("cluster node CAN reach itself (sanity, proves rules apply)"):
         priv_compute.wait_until_succeeds("ping -c 2 127.0.0.1")
 

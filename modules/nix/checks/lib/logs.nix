@@ -12,7 +12,7 @@ let
       observability = {
         id = "observability";
         state = "provisioned";
-        roles = [ "mgmt-observability" ];
+        deployment_roles = [ "mgmt-observability" ];
         monitoring = {
           enabled = true;
           exporters = [ "node" ];
@@ -22,7 +22,7 @@ let
       worker = {
         id = "worker";
         state = "provisioned";
-        roles = [ "compute" ];
+        deployment_roles = [ "compute" ];
         monitoring = {
           enabled = true;
           exporters = [ "node" ];
@@ -53,7 +53,7 @@ pkgs.testers.runNixOSTest {
         _module.args = {
           host = {
             id = "observability";
-            roles = [ "mgmt-observability" ];
+            deployment_roles = [ "mgmt-observability" ];
             monitoring = {
               enabled = true;
               exporters = [ "node" ];
@@ -80,7 +80,7 @@ pkgs.testers.runNixOSTest {
         _module.args = {
           host = {
             id = "worker";
-            roles = [ "compute" ];
+            deployment_roles = [ "compute" ];
             monitoring = {
               enabled = true;
               exporters = [ "node" ];

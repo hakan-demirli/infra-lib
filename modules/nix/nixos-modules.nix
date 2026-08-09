@@ -1,9 +1,9 @@
 _: {
   flake.nixosModules = {
-    role-identity = ../common/role-identity.nix;
-    role-identity-darwin = ../common/role-identity-darwin.nix;
+    host-identity = ../common/host-identity.nix;
+    host-identity-darwin = ../common/host-identity-darwin.nix;
     cluster-users = ../common/cluster-users.nix;
-    role-secrets = ../common/role-secrets.nix;
+    deployment-role-secrets = ../common/deployment-role-secrets.nix;
     host-disko = ../common/host-disko.nix;
     node-exporter = ../common/node-exporter.nix;
     smartctl-exporter = ../common/smartctl-exporter.nix;

@@ -211,7 +211,7 @@ in
       message =
         "modules/ops/kexec.nix: rootKeys is empty. The kexec bundle would "
         + "boot a NixOS with no way to SSH in. At least one inventory user "
-        + "must have `cohort = \"admin\"` and a non-empty `keys.ssh`.";
+        + "must have `admin_scopes = [ \"fleet\" ]` and a non-empty `keys.ssh`.";
     }
   ];
 

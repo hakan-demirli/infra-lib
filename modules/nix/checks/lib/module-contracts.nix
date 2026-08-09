@@ -33,7 +33,7 @@ let
       assertion: !assertion.assertion && lib.hasInfix needle assertion.message
     ) evaluated.assertions;
 
-  roleIdentity = evalModule "/modules/common/role-identity.nix" { };
+  hostIdentity = evalModule "/modules/common/host-identity.nix" { };
   bluetooth = evalModule "/modules/system/bluetooth.nix" { };
   bluetoothSleepState = bluetooth.systemd.services.bluetooth-sleep-state;
   bluetoothStateTool = lib.removeSuffix " save" bluetoothSleepState.serviceConfig.ExecStart;
@@ -68,7 +68,7 @@ let
   mungeService = mungeSops.systemd.services.munged;
 
   checks = {
-    role-identity-does-not-mask-persistent-state = !(roleIdentity.fileSystems ? "/persist/system");
+    host-identity-does-not-mask-persistent-state = !(hostIdentity.fileSystems ? "/persist/system");
     bluetooth-keeps-explicit-power-policy =
       bluetooth.hardware.bluetooth.enable
       && !bluetooth.hardware.bluetooth.powerOnBoot

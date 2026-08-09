@@ -7,7 +7,7 @@ let
     teams
     users
     hostToCluster
-    hostNodeRoles
+    hostTopologyRoles
     loginNodesOfCluster
     computeNodesOfCluster
     controllerNodesOfCluster
@@ -17,6 +17,7 @@ let
     ;
 
   activeClusters = filterAttrs (_: c: c.state != "retired") clusters;
+  isActiveUser = uid: users ? ${uid} && !(users.${uid}.archived or false);
 
   stripTag = s: if hasPrefix "tag:" s then substring 4 (stringLength s) s else s;
 
@@ -51,11 +52,11 @@ let
     in
     if (storageNodesOfCluster.${cid} or [ ]) != [ ] then "tag:${base}-storage" else null;
 
-  tagsOfHost =
+  policyTagsOfHost =
     hid:
     let
       cid = hostToCluster.${hid} or null;
-      nrs = hostNodeRoles.${hid} or [ ];
+      nrs = hostTopologyRoles.${hid} or [ ];
     in
     if cid == null then
       [ ]
@@ -79,17 +80,17 @@ let
       in
       unique ([ (broadTagOf cid) ] ++ filter (t: t != null) (map sub nrs));
 
-  hostTags = mapAttrs (hid: _: tagsOfHost hid) hosts;
+  hostPolicyTags = mapAttrs (hid: _: policyTagsOfHost hid) hosts;
 
   groupsOfUser =
     uid:
     let
       u = users.${uid} or null;
     in
-    if u == null then
+    if u == null || (u.archived or false) then
       [ ]
     else
-      (optional (u.cohort == "admin") "group:admin")
+      (optional (elem "tailnet" u.admin_scopes) "group:admin")
       ++ map (tid: "group:${tid}") (
         filter (tid: any (m: m.user == uid) (teams.${tid} or { members = [ ]; }).members) (attrNames teams)
       );
@@ -167,7 +168,10 @@ let
   ) (attrNames activeClusters);
 
   userGrantRules = concatMap (
-    cid: map (g: mkRule [ g.user ] (loginTagOf cid) "*" "user-grant") clusters.${cid}.access.users
+    cid:
+    map (g: mkRule [ g.user ] (loginTagOf cid) "*" "user-grant") (
+      filter (g: isActiveUser g.user) clusters.${cid}.access.users
+    )
   ) (attrNames activeClusters);
 
   egressClusterRules = concatMap (
@@ -202,7 +206,7 @@ let
     in
     concatMap (
       g: map (otherCid: mkRule [ g.user ] (loginTagOf otherCid) "*" "user-submit") g.can_submit_to
-    ) c.access.users
+    ) (filter (g: isActiveUser g.user) c.access.users)
   ) (attrNames activeClusters);
 
   aclRules =
@@ -222,7 +226,7 @@ let
     let
       uGroups = userGroups.${uid} or [ ];
       uSelfTags = [ uid ];
-      hTags = hostTags.${hid} or [ ];
+      hTags = hostPolicyTags.${hid} or [ ];
       srcMatches = rule: any (s: elem s uGroups || elem s uSelfTags) rule.src;
       dstMatches = rule: elem rule.dst hTags && (rule.port == "*" || port == "*" || rule.port == port);
     in
@@ -231,8 +235,8 @@ let
   canHostReach =
     srcHid: dstHid: port:
     let
-      srcTags = hostTags.${srcHid} or [ ];
-      dstTagsLocal = hostTags.${dstHid} or [ ];
+      srcTags = hostPolicyTags.${srcHid} or [ ];
+      dstTagsLocal = hostPolicyTags.${dstHid} or [ ];
       srcMatches = rule: any (s: elem s srcTags) rule.src;
       dstMatches =
         rule: elem rule.dst dstTagsLocal && (rule.port == "*" || port == "*" || rule.port == port);
@@ -255,7 +259,7 @@ let
           inherit (g) user;
           host = hid;
           account = if sa == null then null else sa.username;
-          inherit (g) tier;
+          inherit (g) unix_tier;
           source = if g.via_team == null then "user-grant" else "team:${g.via_team}";
           archived = if u == null then true else u.archived;
         }
@@ -265,23 +269,21 @@ let
 
   validAccountGrants = filter (g: g.account != null && !g.archived) clusterAccountGrants;
 
-  adminCohortGrants = concatLists (
-    map (
-      hid:
-      let
-        grantsHere = filter (g: g.user != null) validAccountGrants;
-        adminCandidates = filter (g: g.host == hid && users.${g.user}.cohort == "admin") grantsHere;
-      in
-      map (g: {
-        inherit (g) user;
-        host = hid;
-        account = "root";
-        tier = "admin";
-        source = "cohort:admin";
-        archived = false;
-      }) adminCandidates
-    ) (attrNames hosts)
-  );
+  tierRootGrants =
+    map
+      (
+        grant:
+        grant
+        // {
+          account = "root";
+          source = "unix-tier:${grant.unix_tier}";
+        }
+      )
+      (
+        filter (
+          grant: (inventory.unixAccessTiers.${grant.unix_tier} or { root_ssh = false; }).root_ssh
+        ) validAccountGrants
+      );
 
   trustGrants = concatLists (
     map (
@@ -297,7 +299,7 @@ let
             user = uid;
             host = hid;
             account = target;
-            tier = if target == "root" then "admin" else "trust";
+            unix_tier = null;
             source = "ssh_trust";
             inherit ((users.${uid} or { archived = true; })) archived;
           }) uids
@@ -308,7 +310,7 @@ let
 
   validTrustGrants = filter (g: !g.archived && users ? ${g.user}) trustGrants;
 
-  sshGrants = validAccountGrants ++ adminCohortGrants ++ validTrustGrants;
+  sshGrants = validAccountGrants ++ tierRootGrants ++ validTrustGrants;
 
   slurmClusters = filterAttrs (_: c: c.scheduler.kind == "slurm") activeClusters;
 
@@ -325,7 +327,9 @@ let
     cid:
     let
       c = slurmClusters.${cid};
-      usersHere = unique (map (e: e.user) (filter (g: g.user != null) (usersOnCluster.${cid} or [ ])));
+      usersHere = unique (
+        map (e: e.user) (filter (g: g.user != null && isActiveUser g.user) (usersOnCluster.${cid} or [ ]))
+      );
     in
     concatMap (
       uid:
@@ -389,7 +393,9 @@ let
   violationsSlurmNoClient = concatMap (
     cid:
     let
-      usersHere = unique (map (e: e.user) (filter (g: g.user != null) (usersOnCluster.${cid} or [ ])));
+      usersHere = unique (
+        map (e: e.user) (filter (g: g.user != null && isActiveUser g.user) (usersOnCluster.${cid} or [ ]))
+      );
       noClient = filter (uid: hostsCanSubmitForUser uid == [ ]) usersHere;
     in
     map (uid: {
@@ -410,7 +416,7 @@ in
 {
   inherit
     aclRules
-    hostTags
+    hostPolicyTags
     userGroups
     sshGrants
     slurmSubmitGrants

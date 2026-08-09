@@ -3,16 +3,25 @@ let
   testlib = import ./lib.nix { inherit pkgs; };
   inventory = {
     hosts = { };
-    roles = { };
+    deploymentRoles = { };
     networks = { };
-    activeRoles = { };
+    activeDeploymentRoles = [ ];
     teams = { };
     clusters = { };
     machineAge = { };
-    users.owner = {
-      cohort = "admin";
-      headscale_user = "owner";
-      keys.age = [ ];
+    users = {
+      owner = {
+        admin_scopes = [ "tailnet" ];
+        archived = false;
+        headscale_user = "owner";
+        keys.age = [ ];
+      };
+      revoked = {
+        admin_scopes = [ "tailnet" ];
+        archived = true;
+        headscale_user = "revoked";
+        keys.age = [ ];
+      };
     };
   };
   codegen = self.lib.mkCodegen {
@@ -32,6 +41,7 @@ pkgs.testers.runNixOSTest {
 
     policy = headscale.succeed("cat ${aclFile}")
     assert '\"group:admin\":[\"owner@\"]' in policy, policy
+    assert "revoked@" not in policy, policy
 
     headscale.succeed("headscale users create owner")
     headscale.succeed("headscale policy check --file ${aclFile}")

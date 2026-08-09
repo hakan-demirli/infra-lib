@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ pkgs, self }:
 let
   inherit (pkgs) lib;
 
@@ -41,29 +41,23 @@ let
     '';
   };
 
-  moduleCandidates = ref: [
-    (consumerRoot + "/modules/roles/${ref}.nix")
-    (consumerRoot + "/modules/services/${ref}.nix")
-    (consumerRoot + "/modules/common/${ref}.nix")
-    (consumerRoot + "/modules/${ref}.nix")
-    (libRoot + "/modules/roles/${ref}.nix")
-    (libRoot + "/modules/services/${ref}.nix")
-    (libRoot + "/modules/common/${ref}.nix")
-    (libRoot + "/modules/${ref}.nix")
-  ];
+  builder = import (self + "/modules/lib/mkHost.nix") {
+    inputs = { };
+    self = consumerRoot;
+    inherit lib libRoot;
+    inventory = {
+      deploymentRoles = { };
+      hosts = { };
+    };
+  };
 
-  resolveModule =
-    ref:
-    let
-      candidates = moduleCandidates ref;
-      hit = lib.findFirst lib.pathExists null candidates;
-    in
-    if hit != null then hit else throw "module '${ref}' not found in any modules root";
-
-  echoResolved = resolveModule "services/echo";
-  libOnlyResolved = resolveModule "services/lib-only";
-  consumerOnlyResolved = resolveModule "services/consumer-only";
-  missingAttempt = builtins.tryEval (resolveModule "services/does-not-exist");
+  selfEchoResolved = builder.resolveModule "self:services/echo";
+  infraEchoResolved = builder.resolveModule "infra:services/echo";
+  libOnlyResolved = builder.resolveModule "infra:services/lib-only";
+  consumerOnlyResolved = builder.resolveModule "self:services/consumer-only";
+  unqualifiedAttempt = builtins.tryEval (builder.resolveModule "services/echo");
+  traversalAttempt = builtins.tryEval (builder.resolveModule "self:services/../../outside");
+  missingAttempt = builtins.tryEval (builder.resolveModule "infra:services/does-not-exist");
 
   isUnder =
     rootSlug: p:
@@ -72,14 +66,18 @@ let
     in
     p != null && lib.hasInfix "mr-root-${rootSlug}" ps;
 in
-pkgs.runCommand "lib-multiroot"
+pkgs.runCommand "explicit-module-resolution"
   {
-    echoResolvesToConsumer = toString (isUnder "consumer" echoResolved);
+    selfEchoResolvesToConsumer = toString (isUnder "consumer" selfEchoResolved);
+    infraEchoResolvesToLibrary = toString (isUnder "lib" infraEchoResolved);
     libOnlyResolvesToLib = toString (isUnder "lib" libOnlyResolved);
     consumerOnlyResolvesToConsumer = toString (isUnder "consumer" consumerOnlyResolved);
+    unqualifiedThrew = toString (!unqualifiedAttempt.success);
+    traversalThrew = toString (!traversalAttempt.success);
     missingThrew = toString (!missingAttempt.success);
 
-    echoResolvedPath = toString echoResolved;
+    selfEchoResolvedPath = toString selfEchoResolved;
+    infraEchoResolvedPath = toString infraEchoResolved;
     libOnlyResolvedPath = toString libOnlyResolved;
     consumerOnlyResolvedPath = toString consumerOnlyResolved;
   }
@@ -88,9 +86,13 @@ pkgs.runCommand "lib-multiroot"
     fail() { echo "FAIL: $*" >&2; exit 1; }
     pass() { echo "PASS: $*"; }
 
-    [ "$echoResolvesToConsumer" = "1" ] \
-      || fail "services/echo defined in both should resolve to consumer, got $echoResolvedPath"
-    pass "shadowing: services/echo resolves to consumer (won over library)"
+    [ "$selfEchoResolvesToConsumer" = "1" ] \
+      || fail "self:services/echo should resolve to the consumer, got $selfEchoResolvedPath"
+    pass "self: prefix resolves to the consumer"
+
+    [ "$infraEchoResolvesToLibrary" = "1" ] \
+      || fail "infra:services/echo should resolve to the library, got $infraEchoResolvedPath"
+    pass "infra: prefix resolves to the library without shadowing"
 
     [ "$libOnlyResolvesToLib" = "1" ] \
       || fail "services/lib-only should resolve to library, got $libOnlyResolvedPath"
@@ -100,10 +102,18 @@ pkgs.runCommand "lib-multiroot"
       || fail "services/consumer-only should resolve to consumer, got $consumerOnlyResolvedPath"
     pass "consumer-only: services/consumer-only resolves to consumer"
 
+    [ "$unqualifiedThrew" = "1" ] \
+      || fail "unqualified module reference should throw"
+    pass "unqualified module reference throws"
+
+    [ "$traversalThrew" = "1" ] \
+      || fail "module path traversal should throw"
+    pass "module path traversal throws"
+
     [ "$missingThrew" = "1" ] \
       || fail "non-existent module should throw, did not"
-    pass "missing: services/does-not-exist throws (no silent skip)"
+    pass "missing explicit module throws"
 
-    echo "LIB-MULTIROOT INVARIANTS VERIFIED"
+    echo "EXPLICIT MODULE RESOLUTION VERIFIED"
     touch $out
   ''

@@ -13,7 +13,7 @@ let
     mkIf
     ;
 
-  obsHosts = filter (h: elem "mgmt-observability" (h.roles or [ ])) (
+  obsHosts = filter (h: elem "mgmt-observability" (h.deployment_roles or [ ])) (
     attrValues (cluster.hosts or { })
   );
   obsTarget = if obsHosts == [ ] then null else (head obsHosts).id;

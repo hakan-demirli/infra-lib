@@ -1,16 +1,10 @@
 { lib, config, ... }:
 with lib;
 {
-  options.cluster = {
-    host = mkOption {
-      type = types.attrsOf types.anything;
-      description = "Structural copy of the inventory host record.";
-      default = { };
-    };
-    role.name = mkOption {
-      type = types.str;
-      default = "(unknown)";
-    };
+  options.cluster.host = mkOption {
+    type = types.attrsOf types.anything;
+    description = "Structural copy of the inventory host record.";
+    default = { };
   };
 
   config = {
@@ -59,12 +53,5 @@ with lib;
     users.allowNoPasswordLogin = mkDefault true;
 
     nixpkgs.config.allowUnfree = mkDefault true;
-
-    cluster.role.name = mkDefault (
-      if config.cluster.host ? roles && config.cluster.host.roles != [ ] then
-        head config.cluster.host.roles
-      else
-        "(unknown)"
-    );
   };
 }

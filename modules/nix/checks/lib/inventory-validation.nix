@@ -36,13 +36,14 @@ let
         self = root;
       };
     in
-    builtins.tryEval (builtins.deepSeq inv.roles (builtins.deepSeq inv.hosts inv));
+    builtins.tryEval (builtins.deepSeq inv.deploymentRoles (builtins.deepSeq inv.hosts inv));
 
   validUser = id: ''
     {
       id = "${id}";
       kind = "human";
-      cohort = "admin";
+      cohort = "staff";
+      admin_scopes = [ ];
       headscale_user = "${id}";
       allowed_hosts = [ "all" ];
       system_account = {
@@ -58,20 +59,31 @@ let
     }
   '';
 
-  validRole = id: ''
+  validDeploymentRole = id: ''
     {
       id = "${id}";
-      description = "test role";
+      description = "test deployment role";
       kind = "nixos";
-      node_role = "compute";
       modules = [ ];
+    }
+  '';
+
+  validUnixTier = id: ''
+    {
+      id = "${id}";
+      description = "test Unix access tier";
+      groups = [ ];
+      sudo.extra_rule = null;
+      ssh.allowed = true;
+      root_ssh = false;
     }
   '';
 
   validHost = id: extra: ''
     {
       id = "${id}";
-      roles = [ "compute-role" ];
+      deployment_roles = [ "compute-role" ];
+      topology_roles = [ "compute" ];
       state = "provisioned";
       location.kind = "workstation";
       ownership = {
@@ -109,7 +121,7 @@ let
         "users/orphan.nix" = ''
           {
             kind = "human";
-            cohort = "admin";
+            cohort = "staff";
             headscale_user = "orphan";
             system_account = {
               username = "orphan";
@@ -139,7 +151,7 @@ let
       expectFail = true;
       files = {
         "users/inventory-user.nix" = validUser "inventory-user";
-        "roles/compute-role.nix" = validRole "compute-role";
+        "deployment-roles/compute-role.nix" = validDeploymentRole "compute-role";
         "teams/t-test.nix" = ''
           {
             id = "t-test";
@@ -156,7 +168,8 @@ let
         "hosts/personal/h-personal.nix" = ''
           {
             id = "h-personal";
-            roles = [ "compute-role" ];
+            deployment_roles = [ "compute-role" ];
+            topology_roles = [ "compute" ];
             state = "provisioned";
             location.kind = "laptop";
             ownership = {
@@ -174,11 +187,12 @@ let
       expectFail = true;
       files = {
         "users/inventory-user.nix" = validUser "inventory-user";
-        "roles/compute-role.nix" = validRole "compute-role";
+        "deployment-roles/compute-role.nix" = validDeploymentRole "compute-role";
         "hosts/lab/h-nicnet.nix" = ''
           {
             id = "h-nicnet";
-            roles = [ "compute-role" ];
+            deployment_roles = [ "compute-role" ];
+            topology_roles = [ "compute" ];
             state = "provisioned";
             location.kind = "workstation";
             ownership = {
@@ -305,7 +319,7 @@ let
       expectFail = true;
       files = {
         "users/inventory-user.nix" = validUser "inventory-user";
-        "roles/compute-role.nix" = validRole "compute-role";
+        "deployment-roles/compute-role.nix" = validDeploymentRole "compute-role";
         "hosts/lab/h-impermanent.nix" = validHost "h-impermanent" ''
           disko = {
             root_disk = "/dev/vda";
@@ -322,7 +336,7 @@ let
       expectFail = true;
       files = {
         "users/inventory-user.nix" = validUser "inventory-user";
-        "roles/compute-role.nix" = validRole "compute-role";
+        "deployment-roles/compute-role.nix" = validDeploymentRole "compute-role";
         "hosts/lab/h-installer.nix" = validHost "h-installer" ''
           disko = {
             root_disk = "/dev/vda";
@@ -339,7 +353,7 @@ let
       expectFail = false;
       files = {
         "users/inventory-user.nix" = validUser "inventory-user";
-        "roles/compute-role.nix" = validRole "compute-role";
+        "deployment-roles/compute-role.nix" = validDeploymentRole "compute-role";
         "hosts/lab/h-installer.nix" = validHost "h-installer" ''
           disko = {
             root_disk = "/dev/disk/by-id/test-installer-disk";
@@ -356,7 +370,7 @@ let
       expectFail = true;
       files = {
         "users/inventory-user.nix" = validUser "inventory-user";
-        "roles/compute-role.nix" = validRole "compute-role";
+        "deployment-roles/compute-role.nix" = validDeploymentRole "compute-role";
         "hosts/lab/h-persist.nix" = validHost "h-persist" ''
           impermanence.persisted_paths = [ "/var/log" ];
         '';
@@ -368,7 +382,7 @@ let
       expectFail = true;
       files = {
         "users/inventory-user.nix" = validUser "inventory-user";
-        "roles/compute-role.nix" = validRole "compute-role";
+        "deployment-roles/compute-role.nix" = validDeploymentRole "compute-role";
         "hosts/lab/h-monitor.nix" = validHost "h-monitor" ''
           monitoring = {
             enabled = false;
@@ -383,7 +397,7 @@ let
       expectFail = true;
       files = {
         "users/inventory-user.nix" = validUser "inventory-user";
-        "roles/compute-role.nix" = validRole "compute-role";
+        "deployment-roles/compute-role.nix" = validDeploymentRole "compute-role";
         "hosts/lab/h-slurm-fields.nix" = validHost "h-slurm-fields" ''
           slurm_features = [ "gpu" ];
         '';
@@ -395,18 +409,18 @@ let
       expectFail = true;
       files = {
         "users/inventory-user.nix" = validUser "inventory-user";
-        "roles/compute-role.nix" = validRole "compute-role";
+        "deployment-roles/compute-role.nix" = validDeploymentRole "compute-role";
         "hosts/lab/h-ssh-intent.nix" = validHost "h-ssh-intent" ''
           ssh_trust_intent.root.allow_paths = [ "lan" ];
         '';
       };
     };
 
-    role-rejects-removed-tunables = {
-      desc = "unimplemented role tunables are rejected by the schema";
+    deployment-role-rejects-removed-tunables = {
+      desc = "unimplemented deployment role tunables are rejected by the schema";
       expectFail = true;
       files = {
-        "roles/compute-role.nix" = ''
+        "deployment-roles/compute-role.nix" = ''
           {
             id = "compute-role";
             tunables = { };
@@ -415,12 +429,170 @@ let
       };
     };
 
+    deployment-role-requires-explicit-module-owner = {
+      desc = "deployment role module references require an infra: or self: owner";
+      expectFail = true;
+      files."deployment-roles/compute-role.nix" = ''
+        {
+          id = "compute-role";
+          modules = [ "services/base" ];
+        }
+      '';
+    };
+
+    deployment-role-rejects-path-traversal = {
+      desc = "deployment role module references cannot escape their modules root";
+      expectFail = true;
+      files."deployment-roles/compute-role.nix" = ''
+        {
+          id = "compute-role";
+          modules = [ "self:services/../../outside" ];
+        }
+      '';
+    };
+
+    host-requires-explicit-topology-role = {
+      desc = "a buildable host cannot infer topology from deployment composition";
+      expectFail = true;
+      files = {
+        "users/inventory-user.nix" = validUser "inventory-user";
+        "deployment-roles/compute-role.nix" = validDeploymentRole "compute-role";
+        "hosts/lab/h-no-topology.nix" = ''
+          {
+            id = "h-no-topology";
+            deployment_roles = [ "compute-role" ];
+            topology_roles = [ ];
+            state = "provisioned";
+            location.kind = "workstation";
+            ownership = {
+              class = "personal";
+              owner = "inventory-user";
+            };
+            hardware = {
+              arch = "x86_64-linux";
+              cpu_vendor = "amd";
+              cpu_sockets = 1;
+              cpu_cores_per_socket = 2;
+              cpu_threads_per_core = 1;
+              ram_mib = 2048;
+            };
+          }
+        '';
+      };
+    };
+
+    removed-admin-cohort-is-rejected = {
+      desc = "global administration cannot be encoded as an identity cohort";
+      expectFail = true;
+      files."users/legacy-admin.nix" = ''
+        {
+          id = "legacy-admin";
+          cohort = "admin";
+        }
+      '';
+    };
+
+    conflicting-unix-tiers-are-rejected = {
+      desc = "one user cannot resolve to conflicting Unix tiers on a cluster";
+      expectFail = true;
+      files = {
+        "users/inventory-user.nix" = validUser "inventory-user";
+        "deployment-roles/compute-role.nix" = validDeploymentRole "compute-role";
+        "unix-access-tiers/admin.nix" = validUnixTier "admin";
+        "unix-access-tiers/viewer.nix" = validUnixTier "viewer";
+        "teams/tier-team.nix" = ''
+          {
+            id = "tier-team";
+            members = [
+              {
+                user = "inventory-user";
+                role = "member";
+              }
+            ];
+          }
+        '';
+        "hosts/lab/h-tier-conflict.nix" = validHost "h-tier-conflict" "";
+        "clusters/c-tier-conflict.nix" = ''
+          {
+            id = "c-tier-conflict";
+            ownership = {
+              class = "personal";
+              owner = "inventory-user";
+            };
+            members.hosts = [ "h-tier-conflict" ];
+            access.teams = [
+              {
+                team = "tier-team";
+                unix_tier = "admin";
+              }
+            ];
+            access.users = [
+              {
+                user = "inventory-user";
+                unix_tier = "viewer";
+              }
+            ];
+          }
+        '';
+      };
+    };
+
+    unix-tier-map-rejects-unknown-team-role = {
+      desc = "team Unix-tier maps accept only declared team roles and default";
+      expectFail = true;
+      files = {
+        "users/inventory-user.nix" = validUser "inventory-user";
+        "unix-access-tiers/admin.nix" = validUnixTier "admin";
+        "teams/tier-team.nix" = ''
+          {
+            id = "tier-team";
+            members = [
+              {
+                user = "inventory-user";
+                role = "member";
+              }
+            ];
+          }
+        '';
+        "clusters/c-tier-map.nix" = ''
+          {
+            id = "c-tier-map";
+            ownership = {
+              class = "personal";
+              owner = "inventory-user";
+            };
+            access.teams = [
+              {
+                team = "tier-team";
+                unix_tier = {
+                  default = "admin";
+                  operator = "admin";
+                };
+              }
+            ];
+          }
+        '';
+      };
+    };
+
+    unix-tier-rejects-root-when-ssh-is-denied = {
+      desc = "a Unix tier cannot propagate root keys while denying SSH";
+      expectFail = true;
+      files."unix-access-tiers/contradictory.nix" = ''
+        {
+          id = "contradictory";
+          ssh.allowed = false;
+          root_ssh = true;
+        }
+      '';
+    };
+
     scheduler-none-rejects-slurm-payload = {
       desc = "scheduler.kind=none rejects Slurm controllers";
       expectFail = true;
       files = {
         "users/inventory-user.nix" = validUser "inventory-user";
-        "roles/compute-role.nix" = validRole "compute-role";
+        "deployment-roles/compute-role.nix" = validDeploymentRole "compute-role";
         "hosts/lab/h-scheduler.nix" = validHost "h-scheduler" "";
         "clusters/c-test.nix" = ''
           {
@@ -444,7 +616,7 @@ let
       expectFail = true;
       files = {
         "users/inventory-user.nix" = validUser "inventory-user";
-        "roles/compute-role.nix" = validRole "compute-role";
+        "deployment-roles/compute-role.nix" = validDeploymentRole "compute-role";
         "hosts/lab/h-fs.nix" = validHost "h-fs" "";
         "clusters/c-fs.nix" = ''
           {
@@ -475,11 +647,12 @@ let
       expectFail = true;
       files = {
         "users/inventory-user.nix" = validUser "inventory-user";
-        "roles/compute-role.nix" = validRole "compute-role";
+        "deployment-roles/compute-role.nix" = validDeploymentRole "compute-role";
         "hosts/lab/h-guest.nix" = ''
           {
             id = "h-guest";
-            roles = [ "compute-role" ];
+            deployment_roles = [ "compute-role" ];
+            topology_roles = [ "compute" ];
             state = "provisioned";
             location.kind = "kvm-guest";
             ownership = {
@@ -504,11 +677,12 @@ let
       expectFail = false;
       files = {
         "users/inventory-user.nix" = validUser "inventory-user";
-        "roles/compute-role.nix" = validRole "compute-role";
+        "deployment-roles/compute-role.nix" = validDeploymentRole "compute-role";
         "hosts/lab/h-min.nix" = ''
           {
             id = "h-min";
-            roles = [ "compute-role" ];
+            deployment_roles = [ "compute-role" ];
+            topology_roles = [ "compute" ];
             state = "provisioned";
             location.kind = "workstation";
             ownership = {

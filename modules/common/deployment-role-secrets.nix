@@ -8,7 +8,7 @@
 with lib;
 let
   hid = host.id;
-  hostRoles = host.roles;
+  hostDeploymentRoles = host.deployment_roles;
 
   walkSource =
     kind: srcId: paths: bucketPath:
@@ -16,7 +16,7 @@ let
       [ ]
     else if !(builtins.pathExists bucketPath) then
       throw ''
-        role-secrets: ${kind} '${srcId}' on host '${hid}' declares secret_paths but no encrypted bucket exists at ${toString bucketPath}.
+        deployment-role-secrets: ${kind} '${srcId}' on host '${hid}' declares secret_paths but no encrypted bucket exists at ${toString bucketPath}.
         Add the sops file or drop the declaration.
       ''
     else
@@ -27,15 +27,17 @@ let
         bucket = bucketPath;
       }) paths;
 
-  roleEntries =
-    roleId:
+  deploymentRoleEntries =
+    deploymentRoleId:
     let
-      role =
-        cluster.roles.${roleId}
-          or (throw "role-secrets: host '${hid}' references role '${roleId}' which is not declared in inventory.");
-      paths = role.secret_paths or { };
+      deploymentRole =
+        cluster.deploymentRoles.${deploymentRoleId}
+          or (throw "deployment-role-secrets: host '${hid}' references deployment role '${deploymentRoleId}' which is not declared in inventory.");
+      paths = deploymentRole.secret_paths or { };
     in
-    walkSource "role" roleId paths (self + "/secrets/roles/${roleId}.yml");
+    walkSource "deployment-role" deploymentRoleId paths (
+      self + "/secrets/deployment-roles/${deploymentRoleId}.yml"
+    );
 
   hostCluster = cluster.hostToCluster.${hid} or null;
   clusterEntries =
@@ -45,12 +47,12 @@ let
       let
         c =
           cluster.clusters.${hostCluster}
-            or (throw "role-secrets: host '${hid}' is mapped to cluster '${hostCluster}' which is not declared.");
+            or (throw "deployment-role-secrets: host '${hid}' is mapped to cluster '${hostCluster}' which is not declared.");
         paths = c.secret_paths or { };
       in
       walkSource "cluster" hostCluster paths (self + "/secrets/clusters/${hostCluster}.yml");
 
-  allEntries = concatLists (map roleEntries hostRoles) ++ clusterEntries;
+  allEntries = concatLists (map deploymentRoleEntries hostDeploymentRoles) ++ clusterEntries;
 
   byName = foldl' (
     acc: e:

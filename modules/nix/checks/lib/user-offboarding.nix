@@ -58,12 +58,11 @@ let
       uid,
       sshKey,
       archived,
-      isRoot ? true,
     }:
     {
       id = uname;
       kind = "human";
-      cohort = if isRoot then "admin" else "staff";
+      cohort = "staff";
       allowed_hosts = [ "all" ];
       xrdp_access = false;
       expires = null;
@@ -103,25 +102,26 @@ let
     usersOnHost.off-host = [
       {
         user = "active-user";
-        tier = "admin";
+        unix_tier = "admin";
         via_team = null;
         via_team_role = null;
         can_submit_to = [ ];
       }
       {
         user = "departing-user";
-        tier = "admin";
+        unix_tier = "admin";
         via_team = null;
         via_team_role = null;
         can_submit_to = [ ];
       }
     ];
-    accessTiers.admin = {
+    unixAccessTiers.admin = {
       ssh = {
         allowed = true;
       };
-      sudo = "NOPASSWD:ALL";
-      extra_groups = [ "wheel" ];
+      sudo.extra_rule = "NOPASSWD:ALL";
+      groups = [ "wheel" ];
+      root_ssh = true;
     };
   };
 

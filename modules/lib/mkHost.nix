@@ -7,16 +7,21 @@
 }:
 with lib;
 let
-  moduleCandidates = ref: [
-    (self + "/modules/roles/${ref}.nix")
-    (self + "/modules/services/${ref}.nix")
-    (self + "/modules/common/${ref}.nix")
-    (self + "/modules/${ref}.nix")
-    (libRoot + "/modules/roles/${ref}.nix")
-    (libRoot + "/modules/services/${ref}.nix")
-    (libRoot + "/modules/common/${ref}.nix")
-    (libRoot + "/modules/${ref}.nix")
-  ];
+  moduleCandidates =
+    ref:
+    let
+      parsed = builtins.match "^(infra|self):([a-z0-9][a-z0-9_.-]*(/[a-z0-9][a-z0-9_.-]*)*)$" ref;
+      source = elemAt parsed 0;
+      relative = elemAt parsed 1;
+      root = if source == "infra" then libRoot else self;
+    in
+    if parsed == null then
+      throw "mkHost: module reference '${ref}' must use an explicit infra: or self: owner and a safe relative path"
+    else
+      [
+        (root + "/modules/${relative}.nix")
+        (root + "/modules/${relative}/default.nix")
+      ];
 
   resolveModule =
     ref:
@@ -28,8 +33,8 @@ let
       hit
     else
       throw ''
-        mkRole: cannot resolve module '${ref}'.
-        Searched (in order):
+        mkHost: cannot resolve explicit module reference '${ref}'.
+        Searched:
         ${concatStringsSep "\n" (map (p: "  - ${toString p}") candidates)}
       '';
 
@@ -37,9 +42,9 @@ let
     inputs.sops-nix.nixosModules.sops
     inputs.disko.nixosModules.disko
     inputs.impermanence.nixosModules.impermanence
-    (libRoot + "/modules/common/role-identity.nix")
+    (libRoot + "/modules/common/host-identity.nix")
     (libRoot + "/modules/common/cluster-users.nix")
-    (libRoot + "/modules/common/role-secrets.nix")
+    (libRoot + "/modules/common/deployment-role-secrets.nix")
     (libRoot + "/modules/common/host-disko.nix")
     (libRoot + "/modules/common/node-exporter.nix")
     (libRoot + "/modules/common/smartctl-exporter.nix")
@@ -60,15 +65,15 @@ let
     optional isServer inputs.srvos.nixosModules.server;
 
   baseDarwinModules = optional (inputs ? nix-darwin) (
-    libRoot + "/modules/common/role-identity-darwin.nix"
+    libRoot + "/modules/common/host-identity-darwin.nix"
   );
 
-  roleModulesFor =
+  deploymentRoleModulesFor =
     host:
     let
-      sortedRoles = sort lessThan host.roles;
-      resolveForRole =
-        roleId: ref:
+      sortedDeploymentRoles = sort lessThan host.deployment_roles;
+      resolveForDeploymentRole =
+        deploymentRoleId: ref:
         let
           candidates = moduleCandidates ref;
           hit = findFirst pathExists null candidates;
@@ -77,17 +82,17 @@ let
           hit
         else
           throw ''
-            mkRole: host '${host.id}' role '${roleId}' references module '${ref}' which does not exist.
-            Searched (in order):
+            mkHost: host '${host.id}' deployment role '${deploymentRoleId}' references module '${ref}' which does not exist.
+            Searched:
             ${concatStringsSep "\n" (map (p: "  - ${toString p}") candidates)}
           '';
       resolved = concatMap (
-        roleId:
+        deploymentRoleId:
         let
-          spec = inventory.roles.${roleId};
+          spec = inventory.deploymentRoles.${deploymentRoleId};
         in
-        map (resolveForRole roleId) spec.modules
-      ) sortedRoles;
+        map (resolveForDeploymentRole deploymentRoleId) spec.modules
+      ) sortedDeploymentRoles;
     in
     unique resolved;
 
@@ -114,7 +119,7 @@ let
         [ libPath ]
       else
         throw ''
-          mkRole: host '${host.id}' declares hardware.mainboard='${mb}' but no matching module exists.
+          mkHost: host '${host.id}' declares hardware.mainboard='${mb}' but no matching module exists.
           Searched (in order):
             - ${toString consumerPath}
             - ${toString libPath}
@@ -128,7 +133,7 @@ let
     if quirk == null then
       [ ]
     else if !(inputs ? nixos-hardware) then
-      throw "mkRole: host '${host.id}' declares labels.nixos_hardware='${quirk}' but inputs.nixos-hardware is not wired into the flake."
+      throw "mkHost: host '${host.id}' declares labels.nixos_hardware='${quirk}' but inputs.nixos-hardware is not wired into the flake."
     else
       let
         p = inputs.nixos-hardware + "/${quirk}";
@@ -136,7 +141,7 @@ let
       if pathExists p then
         [ p ]
       else
-        throw "mkRole: host '${host.id}' declares labels.nixos_hardware='${quirk}' but nixos-hardware has no such path (${toString p}).";
+        throw "mkHost: host '${host.id}' declares labels.nixos_hardware='${quirk}' but nixos-hardware has no such path (${toString p}).";
 
   buildNixos =
     host:
@@ -153,14 +158,15 @@ let
         ++ srvosIfServer host
         ++ mainboardModule host
         ++ nixosHardwareModule host
-        ++ roleModulesFor host
+        ++ deploymentRoleModulesFor host
         ++ hostOverride host
         ++ [
           (_: {
             cluster.host = {
               inherit (host)
                 id
-                roles
+                deployment_roles
+                topology_roles
                 hardware
                 location
                 ownership
@@ -200,14 +206,15 @@ let
         modules =
           baseDarwinModules
           ++ mainboardModule host
-          ++ roleModulesFor host
+          ++ deploymentRoleModulesFor host
           ++ hostOverride host
           ++ [
             (_: {
               cluster.host = {
                 inherit (host)
                   id
-                  roles
+                  deployment_roles
+                  topology_roles
                   hardware
                   location
                   ownership
@@ -258,7 +265,7 @@ in
       baseLinuxModules
       ++ mainboardModule host
       ++ nixosHardwareModule host
-      ++ roleModulesFor host
+      ++ deploymentRoleModulesFor host
       ++ hostOverride host;
   }) (filterAttrs (_: h: isNixosHost h && buildable h) inventory.hosts);
 }

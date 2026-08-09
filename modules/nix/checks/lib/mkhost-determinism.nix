@@ -5,13 +5,14 @@ let
   types = import (self + "/modules/lib/types.nix") { inherit lib; };
 
   syntheticInventory = pkgs.runCommand "inv-determinism" { } ''
-    mkdir -p $out/inventory/{hosts/personal,users,roles,sites,racks,networks,teams,access-tiers,clusters,switches,topologies,projects}
+    mkdir -p $out/inventory/{hosts/personal,users,deployment-roles,sites,racks,networks,teams,unix-access-tiers,clusters,switches,topologies,projects}
 
     cat > $out/inventory/users/inventory-user.nix <<'EOF'
     {
       id = "inventory-user";
       kind = "human";
-      cohort = "admin";
+      cohort = "staff";
+      admin_scopes = [ "fleet" ];
       allowed_hosts = [ "all" ];
       system_account = {
         username = "inventory-user";
@@ -31,16 +32,15 @@ let
       id = "test-site";
       location = "lab";
       power_budget_kw = 100;
-      cooling = "passive";
+      cooling = "air";
     }
     EOF
 
-    cat > $out/inventory/roles/compute-role.nix <<'EOF'
+    cat > $out/inventory/deployment-roles/compute-role.nix <<'EOF'
     {
       id = "compute-role";
-      description = "synthetic role";
+      description = "synthetic deployment role";
       kind = "nixos";
-      node_role = "compute";
       modules = [ ];
     }
     EOF
@@ -48,7 +48,8 @@ let
     cat > $out/inventory/hosts/personal/test-host.nix <<'EOF'
     {
       id = "test-host";
-      roles = [ "compute-role" ];
+      deployment_roles = [ "compute-role" ];
+      topology_roles = [ "compute" ];
       state = "provisioned";
       location.kind = "workstation";
       ownership = {
@@ -82,18 +83,18 @@ let
   jsonA = builtins.toJSON {
     inherit (invA) hosts;
     inherit (invA) users;
-    inherit (invA) roles;
+    inherit (invA) deploymentRoles;
   };
   jsonB = builtins.toJSON {
     inherit (invB) hosts;
     inherit (invB) users;
-    inherit (invB) roles;
+    inherit (invB) deploymentRoles;
   };
 
   hashA = builtins.hashString "sha256" jsonA;
   hashB = builtins.hashString "sha256" jsonB;
 in
-pkgs.runCommand "mkrole-determinism"
+pkgs.runCommand "mkhost-determinism"
   {
     sameJson = toString (jsonA == jsonB);
     sameHash = toString (hashA == hashB);
@@ -115,6 +116,6 @@ pkgs.runCommand "mkrole-determinism"
       || fail "sha256 differs: A=$hashA B=$hashB"
     pass "sha256 matches across both loads: $hashA"
 
-    echo "MKROLE DETERMINISM VERIFIED"
+    echo "MKHOST DETERMINISM VERIFIED"
     touch $out
   ''

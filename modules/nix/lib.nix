@@ -25,7 +25,7 @@ let
 
   mkIntent = { lib, inventory }: import (libDir + "/intent.nix") { inherit lib inventory; };
 
-  mkRoleFn =
+  mkHostFn =
     {
       inputs,
       self,
@@ -33,7 +33,7 @@ let
       inventory,
       libRoot ? ../..,
     }:
-    import (libDir + "/mkRole.nix") {
+    import (libDir + "/mkHost.nix") {
       inherit
         inputs
         self
@@ -125,7 +125,9 @@ let
   mkHostFacts =
     inventory:
     lib.mapAttrs (_hid: h: {
-      inherit (h) id roles;
+      inherit (h) id;
+      deploymentRoles = h.deployment_roles;
+      topologyRoles = h.topology_roles;
       system = h.hardware.arch;
       os = h.hardware.os;
       mainboard = h.hardware.mainboard or null;
@@ -141,7 +143,9 @@ let
     inventory:
     lib.unique (
       lib.concatLists (
-        lib.mapAttrsToList (_uid: u: if u.cohort == "admin" then u.keys.ssh else [ ]) inventory.users
+        lib.mapAttrsToList (
+          _uid: u: if lib.elem "fleet" u.admin_scopes && !(u.archived or false) then u.keys.ssh else [ ]
+        ) inventory.users
       )
     );
 in
@@ -159,6 +163,6 @@ in
       mkKexecBundle
       mkDiskoInstallerBundle
       ;
-    mkRole = mkRoleFn;
+    mkHost = mkHostFn;
   };
 }

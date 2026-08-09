@@ -118,7 +118,7 @@ let
   sites = loadEntities "sites" types.siteModule;
   racks = loadEntities "racks" types.rackModule;
   networks = loadEntities "networks" types.networkModule;
-  roles = loadEntities "roles" types.roleModule;
+  deploymentRoles = loadEntities "deployment-roles" types.deploymentRoleModule;
   switches = loadEntities "switches" types.switchModule;
   topologies = loadEntities "topologies" types.topologyModule;
   links = loadEntities "links" types.linkModule;
@@ -127,7 +127,7 @@ let
   hosts = loadEntities "hosts" types.hostModule;
 
   explicitTeams = loadEntities "teams" types.teamModule;
-  accessTiers = loadEntities "access-tiers" types.accessTierModule;
+  unixAccessTiers = loadEntities "unix-access-tiers" types.unixAccessTierModule;
   explicitClusters = loadEntities "clusters" types.clusterModule;
 
   ownerUsers = unique (filter (u: u != null) (mapAttrsToList (_: h: h.ownership.owner) hosts));
@@ -174,10 +174,11 @@ let
     else
       null;
 
-  hostRoles = h: unique (sort lessThan h.roles);
+  hostDeploymentRoles = h: unique (sort lessThan h.deployment_roles);
 
-  hostsByRole = foldl' (
-    acc: h: foldl' (acc2: r: acc2 // { ${r} = (acc2.${r} or [ ]) ++ [ h.id ]; }) acc (hostRoles h)
+  hostsByDeploymentRole = foldl' (
+    acc: h:
+    foldl' (acc2: r: acc2 // { ${r} = (acc2.${r} or [ ]) ++ [ h.id ]; }) acc (hostDeploymentRoles h)
   ) { } (attrValues hosts);
 
   schedulerHostsOf =
@@ -187,7 +188,7 @@ let
     _cid: c:
     unique (
       c.members.hosts
-      ++ concatLists (map (r: hostsByRole.${r} or [ ]) c.members.roles)
+      ++ concatLists (map (r: hostsByDeploymentRole.${r} or [ ]) c.members.deployment_roles)
       ++ schedulerHostsOf c
     )
   ) explicitClusters;
@@ -228,7 +229,6 @@ let
     hid: h:
     let
       cid = "cluster-${hid}";
-      team = hostOwnerTeam h;
     in
     {
       name = cid;
@@ -249,17 +249,7 @@ let
           hosts = [ hid ];
         };
         access = {
-          teams =
-            if team != null then
-              [
-                {
-                  inherit team;
-                  tier = "admin";
-                  can_submit_to = [ ];
-                }
-              ]
-            else
-              [ ];
+          teams = [ ];
           users = [ ];
         };
         network = {
@@ -286,7 +276,7 @@ let
     _cid: c:
     unique (
       c.members.hosts
-      ++ concatLists (map (r: hostsByRole.${r} or [ ]) c.members.roles)
+      ++ concatLists (map (r: hostsByDeploymentRole.${r} or [ ]) c.members.deployment_roles)
       ++ schedulerHostsOf c
     )
   ) clusters;
@@ -303,16 +293,18 @@ let
     let
       t = teams.${grant.team} or null;
       members = if t == null then [ ] else t.members;
-      tierFor =
+      unixTierFor =
         role:
-        if builtins.isString grant.tier then
-          grant.tier
+        if builtins.isString grant.unix_tier then
+          grant.unix_tier
         else
-          (grant.tier.${role} or (grant.tier.member or "standard"));
+          grant.unix_tier.${role} or grant.unix_tier.default or (throw ''
+            inventory: cluster team grant for '${grant.team}' has no Unix tier for team role '${role}' and no default
+          '');
     in
     map (m: {
       inherit (m) user;
-      tier = tierFor m.role;
+      unix_tier = unixTierFor m.role;
       via_team = grant.team;
       via_team_role = m.role;
       inherit (grant) can_submit_to;
@@ -325,15 +317,13 @@ let
       teamGrants = concatLists (map expandTeamGrant c.access.teams);
       userGrants = map (g: {
         inherit (g) user;
-        inherit (g) tier;
+        inherit (g) unix_tier;
         via_team = null;
         via_team_role = null;
         inherit (g) can_submit_to;
       }) c.access.users;
-      explicitUsers = map (g: g.user) c.access.users;
-      teamFiltered = filter (g: !(elem g.user explicitUsers)) teamGrants;
     in
-    teamFiltered ++ userGrants;
+    teamGrants ++ userGrants;
 
   usersOnHost =
     hid:
@@ -348,7 +338,7 @@ let
     h:
     let
       arch = h.hardware.arch;
-      rs = concatStringsSep "+" (hostRoles h);
+      rs = concatStringsSep "+" (hostDeploymentRoles h);
     in
     "${arch}:${rs}";
 
@@ -591,20 +581,74 @@ let
       ) "host '${h.id}' virtualization currently supports only x86_64-linux")
     ];
 
-  hostRoleRefs =
-    h: map (r: optional (!roles ? ${r}) "host '${h.id}' references unknown role '${r}'") (hostRoles h);
+  hostDeploymentRoleRefs =
+    h:
+    map (
+      r: optional (!deploymentRoles ? ${r}) "host '${h.id}' references unknown deployment role '${r}'"
+    ) (hostDeploymentRoles h);
 
-  hostRolesNonEmpty =
+  hostDeploymentRolesNonEmpty =
     h:
     optional
       (
-        h.roles == [ ]
+        h.deployment_roles == [ ]
         && (elem h.hardware.os [
           "linux"
           "darwin"
         ])
       )
-      "host '${h.id}' has empty roles[]; every host that builds a closure must compose at least one role";
+      "host '${h.id}' has empty deployment_roles[]; every host that builds a closure must compose at least one deployment role";
+
+  hostTopologyRolesNonEmpty =
+    h:
+    optional
+      (
+        h.topology_roles == [ ]
+        && (elem h.hardware.os [
+          "linux"
+          "darwin"
+        ])
+      )
+      "host '${h.id}' has empty topology_roles[]; every host that builds a closure must declare its topology";
+
+  hostDeploymentRoleKinds =
+    h:
+    let
+      expected = if h.hardware.os == "darwin" then "darwin" else "nixos";
+    in
+    map (
+      roleId:
+      optional (deploymentRoles ? ${roleId} && deploymentRoles.${roleId}.kind != expected)
+        "host '${h.id}' uses ${expected} but deployment role '${roleId}' has kind='${deploymentRoles.${roleId}.kind}'"
+    ) (hostDeploymentRoles h);
+
+  hostRoleUniqueness =
+    h:
+    concatLists [
+      (optional (
+        length h.deployment_roles != length (unique h.deployment_roles)
+      ) "host '${h.id}' has duplicate deployment_roles")
+      (optional (
+        length h.topology_roles != length (unique h.topology_roles)
+      ) "host '${h.id}' has duplicate topology_roles")
+    ];
+
+  deploymentRoleContract =
+    role:
+    optional (
+      length role.modules != length (unique role.modules)
+    ) "deployment role '${role.id}' has duplicate module references";
+
+  unixAccessTierContract =
+    tier:
+    concatLists [
+      (optional (
+        length tier.groups != length (unique tier.groups)
+      ) "Unix access tier '${tier.id}' has duplicate groups")
+      (optional (
+        tier.root_ssh && !tier.ssh.allowed
+      ) "Unix access tier '${tier.id}' enables root_ssh while denying SSH")
+    ];
 
   teamMemberRefs =
     t:
@@ -639,8 +683,11 @@ let
         h: optional (!hosts ? ${h}) "cluster '${c.id}' members.hosts references unknown host '${h}'"
       ) c.members.hosts)
       (map (
-        r: optional (!roles ? ${r}) "cluster '${c.id}' members.roles references unknown role '${r}'"
-      ) c.members.roles)
+        r:
+        optional (
+          !deploymentRoles ? ${r}
+        ) "cluster '${c.id}' members.deployment_roles references unknown deployment role '${r}'"
+      ) c.members.deployment_roles)
     ];
 
   clusterSchedulerRefs =
@@ -680,7 +727,13 @@ let
       ) c.scheduler.partitions)
     ];
 
-  resolveTierIds = tier: if builtins.isString tier then [ tier ] else attrValues tier;
+  resolveUnixTierIds = tier: if builtins.isString tier then [ tier ] else attrValues tier;
+  unixTierMapKeys = [
+    "admin"
+    "member"
+    "viewer"
+    "default"
+  ];
 
   clusterAccessRefs =
     c:
@@ -689,15 +742,29 @@ let
         g:
         optional (!teams ? ${g.team}) "cluster '${c.id}' access.teams references unknown team '${g.team}'"
       ) c.access.teams)
+      (map (
+        g:
+        let
+          invalidKeys = filter (key: !elem key unixTierMapKeys) (attrNames g.unix_tier);
+        in
+        optional (!builtins.isString g.unix_tier && invalidKeys != [ ])
+          "cluster '${c.id}' access.teams[team=${g.team}].unix_tier has invalid role keys: ${concatStringsSep ", " invalidKeys}"
+      ) c.access.teams)
+      (map (
+        g:
+        optional (
+          !builtins.isString g.unix_tier && g.unix_tier == { }
+        ) "cluster '${c.id}' access.teams[team=${g.team}].unix_tier cannot be an empty role map"
+      ) c.access.teams)
       (concatLists (
         map (
           g:
           map (
             t:
             optional (
-              !accessTiers ? ${t}
-            ) "cluster '${c.id}' access.teams[team=${g.team}] tier '${t}' is not a declared access-tier"
-          ) (resolveTierIds g.tier)
+              !unixAccessTiers ? ${t}
+            ) "cluster '${c.id}' access.teams[team=${g.team}] Unix tier '${t}' is not declared"
+          ) (resolveUnixTierIds g.unix_tier)
         ) c.access.teams
       ))
       (concatLists (
@@ -718,8 +785,8 @@ let
       (map (
         g:
         optional (
-          !accessTiers ? ${g.tier}
-        ) "cluster '${c.id}' access.users[user=${g.user}].tier '${g.tier}' is not a declared access-tier"
+          !unixAccessTiers ? ${g.unix_tier}
+        ) "cluster '${c.id}' access.users[user=${g.user}].unix_tier '${g.unix_tier}' is not declared"
       ) c.access.users)
       (concatLists (
         map (
@@ -733,6 +800,20 @@ let
         ) c.access.users
       ))
     ];
+
+  clusterUnixTierConflicts =
+    c:
+    let
+      grants = usersOnCluster c.id;
+      byUser = foldl' (
+        acc: grant: acc // { ${grant.user} = (acc.${grant.user} or [ ]) ++ [ grant.unix_tier ]; }
+      ) { } grants;
+    in
+    mapAttrsToList (
+      uid: tiers:
+      optional (length (unique tiers) > 1)
+        "cluster '${c.id}' gives user '${uid}' conflicting Unix tiers: ${concatStringsSep ", " (unique tiers)}"
+    ) byUser;
 
   clusterNetworkRefs =
     c:
@@ -897,12 +978,24 @@ let
     ) "user '${uid}' has cohort='student' but no expires date set"
   ) users;
 
+  adminScopeAsserts = mapAttrsToList (
+    uid: user:
+    optional (
+      length user.admin_scopes != length (unique user.admin_scopes)
+    ) "user '${uid}' has duplicate admin_scopes"
+  ) users;
+
   badRefs = flatten [
     (mapAttrsToList (
       n: r: optional (!sites ? ${r.site}) "rack '${n}' references unknown site '${r.site}'"
     ) racks)
-    (mapAttrsToList (_: hostRoleRefs) hosts)
-    (mapAttrsToList (_: hostRolesNonEmpty) hosts)
+    (mapAttrsToList (_: hostDeploymentRoleRefs) hosts)
+    (mapAttrsToList (_: hostDeploymentRolesNonEmpty) hosts)
+    (mapAttrsToList (_: hostTopologyRolesNonEmpty) hosts)
+    (mapAttrsToList (_: hostDeploymentRoleKinds) hosts)
+    (mapAttrsToList (_: hostRoleUniqueness) hosts)
+    (mapAttrsToList (_: deploymentRoleContract) deploymentRoles)
+    (mapAttrsToList (_: unixAccessTierContract) unixAccessTiers)
     (mapAttrsToList (
       n: h:
       optional (
@@ -935,6 +1028,7 @@ let
     (mapAttrsToList (_: clusterMemberRefs) explicitClusters)
     (mapAttrsToList (_: clusterSchedulerRefs) explicitClusters)
     (mapAttrsToList (_: clusterAccessRefs) explicitClusters)
+    (mapAttrsToList (_: clusterUnixTierConflicts) explicitClusters)
     (mapAttrsToList (_: clusterNetworkRefs) explicitClusters)
     (mapAttrsToList (_: clusterFsContract) explicitClusters)
     (mapAttrsToList (_: clusterParentRef) explicitClusters)
@@ -948,6 +1042,7 @@ let
     (mapAttrsToList (_: linkEndpointRefs) links)
     (mapAttrsToList (_: projectRefs) projects)
     studentExpiresAsserts
+    adminScopeAsserts
     hostClusterCollisions
   ];
 
@@ -956,11 +1051,11 @@ let
       sites
       racks
       networks
-      roles
+      deploymentRoles
       users
       hosts
-      hostsByRole
-      accessTiers
+      hostsByDeploymentRole
+      unixAccessTiers
       switches
       topologies
       links
@@ -978,27 +1073,25 @@ let
       comboRepresentatives
       ;
     hostOwnerTeam = mapAttrs (_: hostOwnerTeam) hosts;
-    hostRoles = mapAttrs (_: hostRoles) hosts;
+    hostDeploymentRoles = mapAttrs (_: hostDeploymentRoles) hosts;
     hostCombo = mapAttrs (_: hostCombo) hosts;
     usersOnHost = mapAttrs (hid: _: usersOnHost hid) hosts;
     usersOnCluster = mapAttrs (cid: _: usersOnCluster cid) clusters;
-    activeRoles = attrNames hostsByRole;
+    activeDeploymentRoles = attrNames hostsByDeploymentRole;
 
-    hostNodeRoles = mapAttrs (
-      _: h: unique (map (rid: roles.${rid}.node_role or "personal") h.roles)
-    ) hosts;
+    hostTopologyRoles = mapAttrs (_: h: sort lessThan (unique h.topology_roles)) hosts;
 
     loginNodesOfCluster = mapAttrs (
-      _cid: hids: filter (hid: elem "login" (hostNodeRolesOf hid)) hids
+      _cid: hids: filter (hid: elem "login" (hostTopologyRolesOf hid)) hids
     ) effectiveAllClusterHosts;
     computeNodesOfCluster = mapAttrs (
-      _cid: hids: filter (hid: elem "compute" (hostNodeRolesOf hid)) hids
+      _cid: hids: filter (hid: elem "compute" (hostTopologyRolesOf hid)) hids
     ) effectiveAllClusterHosts;
     storageNodesOfCluster = mapAttrs (
-      _cid: hids: filter (hid: elem "storage" (hostNodeRolesOf hid)) hids
+      _cid: hids: filter (hid: elem "storage" (hostTopologyRolesOf hid)) hids
     ) effectiveAllClusterHosts;
     controllerNodesOfCluster = mapAttrs (
-      _cid: hids: filter (hid: elem "controller" (hostNodeRolesOf hid)) hids
+      _cid: hids: filter (hid: elem "controller" (hostTopologyRolesOf hid)) hids
     ) effectiveAllClusterHosts;
 
     machineAge = mapAttrs (
@@ -1026,21 +1119,21 @@ let
     hostsWithSlurmClient =
       let
         slurmClientModules = [
-          "services/slurm-client"
-          "services/slurm"
+          "infra:services/slurm-client"
+          "infra:services/slurm"
         ];
-        roleHasSlurmClient =
+        deploymentRoleHasSlurmClient =
           rid:
           let
-            r = roles.${rid} or null;
+            r = deploymentRoles.${rid} or null;
             mods = if r == null then [ ] else r.modules;
           in
           any (m: elem m slurmClientModules) mods;
       in
-      filter (hid: any roleHasSlurmClient (hostRoles hosts.${hid})) (attrNames hosts);
+      filter (hid: any deploymentRoleHasSlurmClient (hostDeploymentRoles hosts.${hid})) (attrNames hosts);
   };
 
-  hostNodeRolesOf = hid: unique (map (rid: roles.${rid}.node_role or "personal") hosts.${hid}.roles);
+  hostTopologyRolesOf = hid: sort lessThan (unique hosts.${hid}.topology_roles);
 in
 if badRefs != [ ] then
   throw "inventory cross-references broken:\n  ${concatStringsSep "\n  " badRefs}"

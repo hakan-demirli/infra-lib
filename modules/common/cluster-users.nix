@@ -11,41 +11,11 @@ let
   hid = host.id;
   grants = cluster.usersOnHost.${hid} or [ ];
 
-  granted = filter (
-    g: cluster.users ? ${g.user} && !(cluster.users.${g.user}.archived or false)
-  ) grants;
-
-  cohortGroups =
-    c:
-    if c == "admin" then
-      [
-        "wheel"
-        "apptainer"
-        "kvm"
-        "libvirtd"
-        "networkmanager"
-        "audio"
-        "video"
-        "input"
-      ]
-    else if c == "staff" then
-      [
-        "users"
-        "video"
-        "audio"
-      ]
-    else if c == "student" then
-      [ "users" ]
-    else if c == "reviewer" then
-      [ "users" ]
-    else
-      [ ];
-
-  tierFor =
+  unixTierFor =
     tid:
-    cluster.accessTiers.${tid} or (throw ''
-      cluster-users: host '${hid}' has a grant referencing tier '${tid}' but no such tier is declared.
-      Known tiers: ${concatStringsSep ", " (attrNames cluster.accessTiers)}.
+    cluster.unixAccessTiers.${tid} or (throw ''
+      cluster-users: host '${hid}' has a grant referencing Unix tier '${tid}' but no such tier is declared.
+      Known tiers: ${concatStringsSep ", " (attrNames cluster.unixAccessTiers)}.
     '');
 
   shellPkg =
@@ -91,13 +61,18 @@ let
   effectiveTier =
     userGrants:
     let
-      tiers = map (g: tierFor g.tier) userGrants;
-      extraGroups = unique (concatLists (map (t: t.extra_groups) tiers));
-      sudoStrings = unique (filter (s: s != null) (map (t: t.sudo) tiers));
-      sshAllowed = if tiers == [ ] then true else any (t: t.ssh.allowed) tiers;
+      tierIds = unique (map (g: g.unix_tier) userGrants);
+      tierId =
+        if length tierIds == 1 then
+          head tierIds
+        else
+          throw "cluster-users: host '${hid}' resolved conflicting Unix tiers: ${concatStringsSep ", " tierIds}";
+      tier = unixTierFor tierId;
     in
     {
-      inherit extraGroups sudoStrings sshAllowed;
+      inherit (tier) groups root_ssh;
+      sudoRule = tier.sudo.extra_rule;
+      sshAllowed = tier.ssh.allowed;
     };
 
   mkUserEntry =
@@ -108,8 +83,7 @@ let
       eff = effectiveTier userGrants;
       extraGroupsList = unique (concatLists [
         sa.groups
-        (cohortGroups u.cohort)
-        eff.extraGroups
+        eff.groups
       ]);
       homeDir = "/home/${sa.username}";
     in
@@ -136,7 +110,7 @@ let
         sa = u.system_account;
         eff = effectiveTier userGrants;
       in
-      map (s: "${sa.username} ALL=(ALL) ${s}") eff.sudoStrings
+      optional (eff.sudoRule != null) "${sa.username} ALL=(ALL) ${eff.sudoRule}"
     ) grantsByUser
   );
 
@@ -156,13 +130,13 @@ let
 
   rootAuthorizedKeys = unique (
     concatLists (
-      map (
-        g:
+      mapAttrsToList (
+        uid: userGrants:
         let
-          u = cluster.users.${g.user};
+          user = cluster.users.${uid};
         in
-        if u.cohort == "admin" && allowedOnThisHost u then u.keys.ssh else [ ]
-      ) granted
+        if (effectiveTier userGrants).root_ssh && allowedOnThisHost user then user.keys.ssh else [ ]
+      ) grantsByUser
     )
     ++ extraTrustedKeysFor "root"
   );
@@ -192,7 +166,6 @@ in
               };
               cohort = mkOption {
                 type = types.enum [
-                  "admin"
                   "staff"
                   "student"
                   "reviewer"

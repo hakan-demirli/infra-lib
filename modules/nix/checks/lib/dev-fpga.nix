@@ -13,7 +13,7 @@ let
       admin-user = {
         id = "admin-user";
         kind = "human";
-        cohort = "admin";
+        cohort = "staff";
         allowed_hosts = [ "all" ];
         xrdp_access = false;
         expires = null;
@@ -62,33 +62,35 @@ let
     usersOnHost."dev-fpga-0" = [
       {
         user = "admin-user";
-        tier = "admin";
+        unix_tier = "admin";
         via_team = "team-dev-box";
         via_team_role = "admin";
         can_submit_to = [ ];
       }
       {
         user = "standard-user";
-        tier = "standard";
+        unix_tier = "standard";
         via_team = "team-dev-box";
         via_team_role = "member";
         can_submit_to = [ ];
       }
     ];
-    accessTiers = {
+    unixAccessTiers = {
       admin = {
         ssh = {
           allowed = true;
         };
-        sudo = "NOPASSWD:ALL";
-        extra_groups = [ "wheel" ];
+        sudo.extra_rule = "NOPASSWD:ALL";
+        groups = [ "wheel" ];
+        root_ssh = true;
       };
       standard = {
         ssh = {
           allowed = true;
         };
-        sudo = null;
-        extra_groups = [ ];
+        sudo.extra_rule = null;
+        groups = [ ];
+        root_ssh = false;
       };
     };
   };
@@ -210,7 +212,7 @@ pkgs.testers.runNixOSTest {
     stage("INVARIANT 4: admin key BLOCKED from standard-user@host (asymmetry)")
     ssh_try("admin-user-id", "standard-user", expect_ok=False)
 
-    stage("INVARIANT 5: admin key reaches root@host (admin cohort)")
+    stage("INVARIANT 5: admin key reaches root@host (admin Unix tier)")
     ssh_try("admin-user-id", "root", expect_ok=True)
 
     stage("INVARIANT 6: standard key reaches root@host (host-local root via ssh_trust)")

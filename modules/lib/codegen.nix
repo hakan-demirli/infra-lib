@@ -7,19 +7,21 @@ with lib;
 let
   inherit (inventory)
     hosts
-    roles
+    deploymentRoles
     networks
     users
-    activeRoles
+    activeDeploymentRoles
     teams
     clusters
     ;
 
-  admins = filterAttrs (_: u: u.cohort == "admin") users;
-  adminAge = unique (concatLists (mapAttrsToList (_: u: u.keys.age) admins));
+  fleetAdmins = filterAttrs (_: u: elem "fleet" u.admin_scopes && !(u.archived or false)) users;
+  tailnetAdmins = filterAttrs (_: u: elem "tailnet" u.admin_scopes && !(u.archived or false)) users;
+  fleetAdminAge = unique (concatLists (mapAttrsToList (_: u: u.keys.age) fleetAdmins));
 
   machineAge = id: inventory.machineAge.${id} or [ ];
-  hostsOfRole = r: filter (h: elem r h.roles) (attrValues hosts);
+  hostsOfDeploymentRole = r: filter (h: elem r h.deployment_roles) (attrValues hosts);
+  isActiveUser = uid: users ? ${uid} && !(users.${uid}.archived or false);
 
   rackedHosts = filterAttrs (_: h: h.location.kind == "rack") hosts;
 
@@ -48,27 +50,27 @@ in
     let
       perHost = mapAttrsToList (_: h: {
         path_regex = "^secrets/hosts/${h.id}\\.yml$";
-        age = adminAge ++ machineAge h.id;
+        age = fleetAdminAge ++ machineAge h.id;
       }) hosts;
 
-      perRole = mapAttrsToList (r: _: {
-        path_regex = "^secrets/roles/${r}\\.yml$";
-        age = adminAge ++ concatLists (map (h: machineAge h.id) (hostsOfRole r));
-      }) roles;
+      perDeploymentRole = mapAttrsToList (r: _: {
+        path_regex = "^secrets/deployment-roles/${r}\\.yml$";
+        age = fleetAdminAge ++ concatLists (map (h: machineAge h.id) (hostsOfDeploymentRole r));
+      }) deploymentRoles;
 
       perCluster = mapAttrsToList (cid: _: {
         path_regex = "^secrets/clusters/${cid}\\.yml$";
-        age = adminAge ++ concatLists (map machineAge (inventory.hostsByCluster.${cid} or [ ]));
+        age = fleetAdminAge ++ concatLists (map machineAge (inventory.hostsByCluster.${cid} or [ ]));
       }) clusters;
 
       cluster = {
         path_regex = "^secrets/cluster\\.yml$";
-        age = adminAge;
+        age = fleetAdminAge;
       };
 
       system = {
         path_regex = "^secrets/system\\.yaml$";
-        age = adminAge ++ bootstrapAge ++ concatLists (mapAttrsToList (id: _: machineAge id) hosts);
+        age = fleetAdminAge ++ bootstrapAge ++ concatLists (mapAttrsToList (id: _: machineAge id) hosts);
       };
 
       yaml = builtins.toJSON {
@@ -78,7 +80,7 @@ in
         ]
         ++ perCluster
         ++ perHost
-        ++ perRole;
+        ++ perDeploymentRole;
       };
     in
     pkgs.runCommand "sops-yaml"
@@ -97,8 +99,8 @@ in
     { pkgs }:
     let
       profile = r: {
-        id = "role-${r}";
-        name = "Role: ${r}";
+        id = "deployment-role-${r}";
+        name = "Deployment role: ${r}";
         boot = {
           kernel = "/assets/cluster-installer/bzImage";
           initrd = [ "/assets/cluster-installer/initrd" ];
@@ -106,7 +108,7 @@ in
             "init=/init"
             "console=ttyS0,115200n8"
             "console=tty0"
-            "cluster.role=${r}"
+            "cluster.deployment-role=${r}"
             "cluster.matchbox=https://matchbox.cluster.local"
           ];
         };
@@ -115,19 +117,19 @@ in
       group = h: {
         inherit (h) id;
         name = h.id;
-        profile = "role-${head h.roles}";
+        profile = "deployment-role-${head h.deployment_roles}";
         selector.mac = primaryMac h;
         metadata = {
           inherit (h) hostname;
           rack = h.location.rack;
-          inherit (h) roles;
+          inherit (h) deployment_roles topology_roles;
         };
       };
 
       profileFiles = mapAttrsToList (r: _: {
         path = "profiles/${r}.json";
         data = builtins.toJSON (profile r);
-      }) (filterAttrs (r: _: elem r activeRoles) roles);
+      }) (filterAttrs (r: _: elem r activeDeploymentRoles) deploymentRoles);
 
       groupFiles = mapAttrsToList (_: h: {
         path = "groups/${h.id}.json";
@@ -250,10 +252,10 @@ in
       groups =
         mapAttrs' (tid: t: {
           name = "group:${tid}";
-          value = map (m: headscaleId m.user) t.members;
+          value = map (m: headscaleId m.user) (filter (m: isActiveUser m.user) t.members);
         }) activeTeams
         // {
-          "group:admin" = map headscaleId (attrNames admins);
+          "group:admin" = map headscaleId (attrNames tailnetAdmins);
         };
 
       tagOwners =
@@ -398,7 +400,7 @@ in
           action = "accept";
           src = [ (headscaleId g.user) ];
           dst = [ "${loginTagOf cid}:*" ];
-        }) c.access.users
+        }) (filter (g: isActiveUser g.user) c.access.users)
       ) (attrNames activeClusters);
 
       egressClusterRules = concatMap (
@@ -446,7 +448,7 @@ in
             src = [ (headscaleId g.user) ];
             dst = [ "${loginTagOf otherCid}:*" ];
           }) g.can_submit_to
-        ) c.access.users
+        ) (filter (g: isActiveUser g.user) c.access.users)
       ) (attrNames activeClusters);
 
       acls = [
@@ -504,9 +506,12 @@ in
         comments = [
           "AUTO-GENERATED by cluster-config codegen. Do not edit."
           ""
-          "Derived from inventory/clusters/, inventory/teams/, inventory/roles/"
-          "(node_role), and inventory/access-tiers/. Regenerate with"
-          "`nix build .#headscale-acl`."
+          "Derived from cluster access, teams, users with tailnet admin scope, and host"
+          "topology roles. Deployment roles and Unix tiers do not grant Tailnet authority."
+          "Regenerate with `nix build .#headscale-acl`."
+          ""
+          "Tag ownership and ACL names do not assign tags to nodes. Promote verified"
+          "nodes manually; only the quarantine tag:bootstrap is assigned during enrolment."
           ""
           "Layers of enforcement (this is the outermost):"
           "  1. headscale ACL (this file)        - reachability on the overlay"

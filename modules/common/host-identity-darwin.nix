@@ -16,28 +16,15 @@ let
       ownerUser.system_account.username;
 in
 {
-  options.cluster = {
-    host = mkOption {
-      type = types.attrsOf types.anything;
-      default = { };
-    };
-    role.name = mkOption {
-      type = types.str;
-      default = "(unknown)";
-    };
+  options.cluster.host = mkOption {
+    type = types.attrsOf types.anything;
+    default = { };
   };
 
   config = mkMerge [
     {
       networking.hostName = mkDefault (config.cluster.host.id or "unknown");
       system.stateVersion = mkDefault 5;
-
-      cluster.role.name = mkDefault (
-        if config.cluster.host ? roles && config.cluster.host.roles != [ ] then
-          head config.cluster.host.roles
-        else
-          "(unknown)"
-      );
     }
     (mkIf (ownerUsername != null) {
       system.primaryUser = mkDefault ownerUsername;

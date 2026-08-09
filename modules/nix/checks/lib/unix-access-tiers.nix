@@ -13,7 +13,7 @@ let
       admin-user = {
         id = "admin-user";
         kind = "human";
-        cohort = "admin";
+        cohort = "staff";
         allowed_hosts = [ "all" ];
         xrdp_access = false;
         expires = null;
@@ -86,47 +86,50 @@ let
     usersOnHost."tier-host" = [
       {
         user = "admin-user";
-        tier = "admin";
+        unix_tier = "admin";
         via_team = null;
         via_team_role = null;
         can_submit_to = [ ];
       }
       {
         user = "standard-user";
-        tier = "standard";
+        unix_tier = "standard";
         via_team = null;
         via_team_role = null;
         can_submit_to = [ ];
       }
       {
         user = "viewer-user";
-        tier = "viewer";
+        unix_tier = "viewer";
         via_team = null;
         via_team_role = null;
         can_submit_to = [ ];
       }
     ];
-    accessTiers = {
+    unixAccessTiers = {
       admin = {
         ssh = {
           allowed = true;
         };
-        sudo = "NOPASSWD:ALL";
-        extra_groups = [ "wheel" ];
+        sudo.extra_rule = "NOPASSWD:ALL";
+        groups = [ "wheel" ];
+        root_ssh = true;
       };
       standard = {
         ssh = {
           allowed = true;
         };
-        sudo = null;
-        extra_groups = [ ];
+        sudo.extra_rule = null;
+        groups = [ ];
+        root_ssh = false;
       };
       viewer = {
         ssh = {
           allowed = false;
         };
-        sudo = null;
-        extra_groups = [ ];
+        sudo.extra_rule = null;
+        groups = [ ];
+        root_ssh = false;
       };
     };
   };
@@ -140,7 +143,7 @@ let
   };
 in
 pkgs.testers.runNixOSTest {
-  name = "access-tiers";
+  name = "unix-access-tiers";
 
   nodes.tier_host =
     { ... }:

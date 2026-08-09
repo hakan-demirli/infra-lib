@@ -7,8 +7,8 @@ let
   inherit (pkgs) lib;
 
   bucketsRoot = pkgs.runCommand "test-buckets" { } ''
-    mkdir -p $out/secrets/roles
-    echo 'munge_key: "FAKE ENCRYPTED PAYLOAD"' > $out/secrets/roles/with-bucket.yml
+    mkdir -p $out/secrets/deployment-roles
+    echo 'munge_key: "FAKE ENCRYPTED PAYLOAD"' > $out/secrets/deployment-roles/with-bucket.yml
   '';
 
   optionStubs = {
@@ -22,7 +22,7 @@ let
     };
   };
 
-  mkRoleSecretsConfig =
+  mkDeploymentRoleSecretsConfig =
     {
       host,
       cluster,
@@ -37,16 +37,16 @@ let
           };
         }
         optionStubs
-        (self + "/modules/common/role-secrets.nix")
+        (self + "/modules/common/deployment-role-secrets.nix")
       ];
     }).config;
 
   scn1Host = {
     id = "host-1";
-    roles = [ "with-bucket" ];
+    deployment_roles = [ "with-bucket" ];
   };
   scn1Cluster = {
-    roles."with-bucket" = {
+    deploymentRoles."with-bucket" = {
       secret_paths.munge-key = {
         source_key = "munge_key";
         path = "/etc/munge/munge.key";
@@ -56,7 +56,7 @@ let
       };
     };
   };
-  scn1Result = mkRoleSecretsConfig {
+  scn1Result = mkDeploymentRoleSecretsConfig {
     host = scn1Host;
     cluster = scn1Cluster;
     selfPath = bucketsRoot;
@@ -64,10 +64,10 @@ let
 
   scn2Host = {
     id = "host-2";
-    roles = [ "with-secrets-no-bucket" ];
+    deployment_roles = [ "with-secrets-no-bucket" ];
   };
   scn2Cluster = {
-    roles."with-secrets-no-bucket" = {
+    deploymentRoles."with-secrets-no-bucket" = {
       secret_paths.something = {
         source_key = "k";
         path = "/etc/something";
@@ -77,7 +77,7 @@ let
       };
     };
   };
-  scn2Result = mkRoleSecretsConfig {
+  scn2Result = mkDeploymentRoleSecretsConfig {
     host = scn2Host;
     cluster = scn2Cluster;
     selfPath = bucketsRoot;
@@ -85,33 +85,33 @@ let
 
   scn3Host = {
     id = "host-3";
-    roles = [ "no-secrets" ];
+    deployment_roles = [ "no-secrets" ];
   };
   scn3Cluster = {
-    roles."no-secrets" = {
+    deploymentRoles."no-secrets" = {
     };
   };
-  scn3Result = mkRoleSecretsConfig {
+  scn3Result = mkDeploymentRoleSecretsConfig {
     host = scn3Host;
     cluster = scn3Cluster;
     selfPath = bucketsRoot;
   };
 
   collisionRoot = pkgs.runCommand "collision-buckets" { } ''
-    mkdir -p $out/secrets/roles
-    echo 'k: "x"' > $out/secrets/roles/role-a.yml
-    echo 'k: "y"' > $out/secrets/roles/role-b.yml
+    mkdir -p $out/secrets/deployment-roles
+    echo 'k: "x"' > $out/secrets/deployment-roles/role-a.yml
+    echo 'k: "y"' > $out/secrets/deployment-roles/role-b.yml
   '';
 
   scn4Host = {
     id = "host-4";
-    roles = [
+    deployment_roles = [
       "role-a"
       "role-b"
     ];
   };
   scn4Cluster = {
-    roles = {
+    deploymentRoles = {
       role-a.secret_paths.dup = {
         source_key = "k";
         path = "/etc/dup-a";
@@ -130,7 +130,7 @@ let
   };
   scn4Try =
     let
-      cfg = mkRoleSecretsConfig {
+      cfg = mkDeploymentRoleSecretsConfig {
         host = scn4Host;
         cluster = scn4Cluster;
         selfPath = collisionRoot;
@@ -145,10 +145,10 @@ let
 
   scn5Host = {
     id = "h5";
-    roles = [ "noop" ];
+    deployment_roles = [ "noop" ];
   };
   scn5Cluster = {
-    roles."noop" = { };
+    deploymentRoles."noop" = { };
     clusters."lab-fpga" = {
       secret_paths.munge-key = {
         source_key = "munge_key";
@@ -160,24 +160,24 @@ let
     };
     hostToCluster.h5 = "lab-fpga";
   };
-  scn5Result = mkRoleSecretsConfig {
+  scn5Result = mkDeploymentRoleSecretsConfig {
     host = scn5Host;
     cluster = scn5Cluster;
     selfPath = clusterBucketsRoot;
   };
 
   clusterRoleCollideRoot = pkgs.runCommand "test-cluster-role-collide" { } ''
-    mkdir -p $out/secrets/roles $out/secrets/clusters
-    echo 'k: "x"' > $out/secrets/roles/some-role.yml
+    mkdir -p $out/secrets/deployment-roles $out/secrets/clusters
+    echo 'k: "x"' > $out/secrets/deployment-roles/some-role.yml
     echo 'k: "y"' > $out/secrets/clusters/some-cluster.yml
   '';
 
   scn6Host = {
     id = "h6";
-    roles = [ "some-role" ];
+    deployment_roles = [ "some-role" ];
   };
   scn6Cluster = {
-    roles."some-role".secret_paths.dup = {
+    deploymentRoles."some-role".secret_paths.dup = {
       source_key = "k";
       path = "/etc/role-dup";
       owner = "root";
@@ -195,7 +195,7 @@ let
   };
   scn6Try =
     let
-      cfg = mkRoleSecretsConfig {
+      cfg = mkDeploymentRoleSecretsConfig {
         host = scn6Host;
         cluster = scn6Cluster;
         selfPath = clusterRoleCollideRoot;
@@ -224,7 +224,7 @@ let
   scn6Json = builtins.toJSON (recordAsserts scn6Try);
 
 in
-pkgs.runCommand "role-secrets"
+pkgs.runCommand "deployment-role-secrets"
   {
     inherit
       scn1Json
@@ -256,26 +256,26 @@ pkgs.runCommand "role-secrets"
       || fail "scn1: mode field not wired"
     echo "$scn1Json" | grep -q '"key":"munge_key"' \
       || fail "scn1: source_key not mapped to .key"
-    echo "$scn1Json" | grep -q "$bucketsRoot/secrets/roles/with-bucket.yml" \
+    echo "$scn1Json" | grep -q "$bucketsRoot/secrets/deployment-roles/with-bucket.yml" \
       || fail "scn1: sopsFile does not point at the bucket fixture (got: $scn1Json)"
-    pass "scn1: role with secret_paths + bucket -> entry materialised, all fields correct"
+    pass "scn1: deployment role with secret_paths + bucket -> entry materialised, all fields correct"
 
     echo "scn2: threw=$scn2Threw"
     [ "$scn2Threw" = "1" ] \
-      || fail "scn2: role with secret_paths but no bucket should throw (loud failure); did not throw"
-    pass "scn2: role with secret_paths but missing bucket -> hard-fails at eval"
+      || fail "scn2: deployment role with secret_paths but no bucket should throw (loud failure); did not throw"
+    pass "scn2: deployment role with secret_paths but missing bucket -> hard-fails at eval"
 
     echo "scn3: $scn3Json"
     [ "$scn3Json" = "{}" ] \
-      || fail "scn3: role without secret_paths should emit no entries; got: $scn3Json"
-    pass "scn3: role without secret_paths -> empty sops.secrets"
+      || fail "scn3: deployment role without secret_paths should emit no entries; got: $scn3Json"
+    pass "scn3: deployment role without secret_paths -> empty sops.secrets"
 
     echo "scn4: $scn4Json"
     echo "$scn4Json" | grep -q '"assertion":false' \
       || fail "scn4: expected a failing assertion for the duplicate-name collision"
-    echo "$scn4Json" | grep -qE 'role:role-a.*role:role-b|role:role-b.*role:role-a' \
-      || fail "scn4: collision message should mention both role-a and role-b with role: prefix; got: $scn4Json"
-    pass "scn4: name collision across roles fires a failing assertion"
+    echo "$scn4Json" | grep -qE 'deployment-role:role-a.*deployment-role:role-b|deployment-role:role-b.*deployment-role:role-a' \
+      || fail "scn4: collision message should mention both role-a and role-b with deployment-role: prefix; got: $scn4Json"
+    pass "scn4: name collision across deployment roles fires a failing assertion"
 
     echo "scn5: $scn5Json"
     echo "$scn5Json" | grep -q '"munge-key"' \
@@ -288,11 +288,11 @@ pkgs.runCommand "role-secrets"
 
     echo "scn6: $scn6Json"
     echo "$scn6Json" | grep -q '"assertion":false' \
-      || fail "scn6: expected a failing assertion for the role-vs-cluster name collision"
-    echo "$scn6Json" | grep -qE 'role:some-role.*cluster:some-cluster|cluster:some-cluster.*role:some-role' \
-      || fail "scn6: collision message should mention BOTH role:some-role AND cluster:some-cluster; got: $scn6Json"
-    pass "scn6: role-vs-cluster name collision fires a failing assertion naming both kinds"
+      || fail "scn6: expected a failing assertion for the deployment-role-vs-cluster name collision"
+    echo "$scn6Json" | grep -qE 'deployment-role:some-role.*cluster:some-cluster|cluster:some-cluster.*deployment-role:some-role' \
+      || fail "scn6: collision message should mention BOTH deployment-role:some-role AND cluster:some-cluster; got: $scn6Json"
+    pass "scn6: deployment-role-vs-cluster name collision fires a failing assertion naming both kinds"
 
     echo "" > $out
-    echo "all role-secrets assertions passed" >> $out
+    echo "all deployment-role-secrets assertions passed" >> $out
   ''

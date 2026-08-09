@@ -8,6 +8,7 @@ let
   slug = strMatching "^[a-z0-9][a-z0-9_-]*$";
   hostId = strMatching "^[a-z][a-z0-9-]*[a-z0-9]$";
   date = strMatching "^[0-9]{4}-[0-9]{2}-[0-9]{2}$";
+  tailnetTag = strMatching "^tag:[a-z0-9][a-z0-9-]*$";
 
   memberRole = enum [
     "admin"
@@ -16,12 +17,26 @@ let
   ];
 
   userCohort = enum [
-    "admin"
     "staff"
     "student"
     "reviewer"
     "device"
     "service"
+  ];
+
+  adminScope = enum [
+    "fleet"
+    "tailnet"
+  ];
+
+  topologyRole = enum [
+    "compute"
+    "login"
+    "storage"
+    "controller"
+    "mgmt"
+    "personal"
+    "external"
   ];
 
   osFamily = enum [
@@ -203,7 +218,7 @@ let
     };
   };
 
-  role = _: {
+  deploymentRole = _: {
     options = {
       id = mkOption { type = slug; };
       description = mkOption {
@@ -217,21 +232,10 @@ let
         ];
         default = "nixos";
       };
-      node_role = mkOption {
-        type = enum [
-          "compute"
-          "login"
-          "storage"
-          "controller"
-          "mgmt"
-          "personal"
-          "external"
-        ];
-        default = "personal";
-      };
       modules = mkOption {
-        type = listOf str;
+        type = listOf (strMatching "^(infra|self):[a-z0-9][a-z0-9_.-]*(/[a-z0-9][a-z0-9_.-]*)*$");
         default = [ ];
+        description = "Modules with an explicit library or consumer owner and no relative path traversal.";
       };
       secret_paths = mkOption {
         type = attrsOf secretPath;
@@ -254,6 +258,11 @@ let
       cohort = mkOption {
         type = userCohort;
         default = "staff";
+      };
+      admin_scopes = mkOption {
+        type = listOf adminScope;
+        default = [ ];
+        description = "Global control-plane authority; never grants a Unix account, groups, sudo, or root SSH.";
       };
       keys = mkOption {
         type = submodule {
@@ -341,7 +350,7 @@ let
     };
   };
 
-  accessTier = _: {
+  unixAccessTier = _: {
     options = {
       id = mkOption { type = slug; };
       description = mkOption {
@@ -360,12 +369,23 @@ let
         default = { };
       };
       sudo = mkOption {
-        type = nullOr str;
-        default = null;
+        type = submodule {
+          options.extra_rule = mkOption {
+            type = nullOr (strMatching ".+");
+            default = null;
+          };
+        };
+        default = { };
       };
-      extra_groups = mkOption {
+      groups = mkOption {
         type = listOf str;
         default = [ ];
+        description = "Supplementary Unix groups granted by this tier.";
+      };
+      root_ssh = mkOption {
+        type = bool;
+        default = false;
+        description = "Whether users receiving this tier also contribute their SSH keys to root.";
       };
     };
   };
@@ -831,9 +851,15 @@ let
         type = nullOr str;
         default = null;
       };
-      roles = mkOption {
+      deployment_roles = mkOption {
         type = listOf slug;
         default = [ ];
+        description = "Deployment compositions that select modules and secret buckets.";
+      };
+      topology_roles = mkOption {
+        type = listOf topologyRole;
+        default = [ ];
+        description = "Operational placement used by topology policy; it never selects modules or assigns Tailnet tags.";
       };
       state = mkOption {
         type = enum [
@@ -1147,8 +1173,9 @@ let
         default = { };
       };
       tailscale_tag = mkOption {
-        type = nullOr str;
+        type = nullOr tailnetTag;
         default = null;
+        description = "Tailnet policy namespace for the cluster. This declares ACL names only and never assigns tags to nodes.";
       };
     };
   };
@@ -1200,7 +1227,7 @@ let
         type = listOf hostId;
         default = [ ];
       };
-      roles = mkOption {
+      deployment_roles = mkOption {
         type = listOf slug;
         default = [ ];
       };
@@ -1233,14 +1260,13 @@ let
     };
   };
 
-  tierGrant = either str (attrsOf str);
+  unixTierGrant = either str (attrsOf str);
 
   clusterTeamGrant = submodule {
     options = {
       team = mkOption { type = slug; };
-      tier = mkOption {
-        type = tierGrant;
-        default = "standard";
+      unix_tier = mkOption {
+        type = unixTierGrant;
       };
       can_submit_to = mkOption {
         type = listOf slug;
@@ -1252,9 +1278,8 @@ let
   clusterUserGrant = submodule {
     options = {
       user = mkOption { type = slug; };
-      tier = mkOption {
+      unix_tier = mkOption {
         type = slug;
-        default = "standard";
       };
       can_submit_to = mkOption {
         type = listOf slug;
@@ -1716,10 +1741,10 @@ in
   siteModule = site;
   rackModule = rack;
   networkModule = network;
-  roleModule = role;
+  deploymentRoleModule = deploymentRole;
   userModule = user;
   teamModule = team;
-  accessTierModule = accessTier;
+  unixAccessTierModule = unixAccessTier;
   hostModule = host;
   clusterModule = cluster;
   switchModule = switch;
@@ -1730,10 +1755,10 @@ in
   siteType = submodule site;
   rackType = submodule rack;
   networkType = submodule network;
-  roleType = submodule role;
+  deploymentRoleType = submodule deploymentRole;
   userType = submodule user;
   teamType = submodule team;
-  accessTierType = submodule accessTier;
+  unixAccessTierType = submodule unixAccessTier;
   hostType = submodule host;
   clusterType = submodule cluster;
   switchType = submodule switch;
@@ -1748,6 +1773,9 @@ in
   hostIdType = hostId;
   memberRoleType = memberRole;
   userCohortType = userCohort;
+  adminScopeType = adminScope;
+  topologyRoleType = topologyRole;
+  tailnetTagType = tailnetTag;
   nixSystemType = nixSystem;
   osFamilyType = osFamily;
 }
