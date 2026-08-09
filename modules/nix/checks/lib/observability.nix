@@ -142,6 +142,7 @@ pkgs.testers.runNixOSTest {
         body = n.succeed("curl -fsS http://127.0.0.1:9100/metrics")
         assert "HELP" in body, f"FAIL: {name} node_exporter not serving metrics"
         assert "node_load1" in body, f"FAIL: {name} missing node_load1 metric"
+        assert "fleet_nixos_system_info" in body, f"FAIL: {name} missing NixOS revision metric"
         say(f"{name}: node_exporter OK ({len(body.splitlines())} metric lines)")
 
     stage("INVARIANT 2: VictoriaMetrics up and accepting queries")

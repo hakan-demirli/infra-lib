@@ -186,6 +186,7 @@ let
                 ;
               inherit (host) cluster;
             };
+            system.configurationRevision = self.rev or self.dirtyRev or self.narHash or null;
           })
         ];
     };
