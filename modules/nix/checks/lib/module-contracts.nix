@@ -91,6 +91,8 @@ let
       && tailscaleAutoconnect.serviceConfig.LoadCredential == [ "auth-key:/run/keys/tailscale" ]
       && tailscaleAutoconnect.serviceConfig.TimeoutStartSec == "60s"
       && lib.hasInfix ''--auth-key "file:$auth_key_file"'' tailscaleAutoconnect.script
+      && lib.hasInfix "--force-reauth" tailscaleAutoconnect.script
+      && lib.hasInfix "/var/lib/tailscale/bootstrap-auth-key.sha256" tailscaleAutoconnect.script
       && lib.hasInfix ''runtime_auth_key="$RUNTIME_DIRECTORY/auth-key"'' tailscaleAutoconnect.script
       && lib.hasInfix "?ephemeral=true" tailscaleAutoconnect.script
       && !lib.hasInfix "cat /run/keys/tailscale" tailscaleAutoconnect.script

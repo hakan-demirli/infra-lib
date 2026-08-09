@@ -84,9 +84,9 @@ in
           TimeoutStartSec = "60s";
         };
         script = lib.mkForce ''
-          getState() {
+          getStatus() {
             ${lib.getExe cfg.package} status --json --peers=false \
-              | ${lib.getExe pkgs.jq} -r '.BackendState'
+              || true
           }
 
           auth_key_file="$CREDENTIALS_DIRECTORY/auth-key"
@@ -98,20 +98,59 @@ in
             auth_key_file="$runtime_auth_key"
           ''}
 
+          auth_key_fingerprint="$(${pkgs.coreutils}/bin/sha256sum "$auth_key_file")"
+          auth_key_fingerprint="''${auth_key_fingerprint%% *}"
+          auth_key_fingerprint_file=/var/lib/tailscale/bootstrap-auth-key.sha256
+          stored_auth_key_fingerprint=
+          if [[ -r "$auth_key_fingerprint_file" ]]; then
+            IFS= read -r stored_auth_key_fingerprint < "$auth_key_fingerprint_file" || true
+          fi
+
+          storeAuthKeyFingerprint() {
+            ${pkgs.coreutils}/bin/install -d -m 0700 /var/lib/tailscale
+            fingerprint_staged="$(${pkgs.coreutils}/bin/mktemp /var/lib/tailscale/.bootstrap-auth-key.XXXXXX)"
+            ${pkgs.coreutils}/bin/printf '%s\n' "$auth_key_fingerprint" > "$fingerprint_staged"
+            ${pkgs.coreutils}/bin/chmod 0600 "$fingerprint_staged"
+            ${pkgs.coreutils}/bin/mv -f "$fingerprint_staged" "$auth_key_fingerprint_file"
+            stored_auth_key_fingerprint="$auth_key_fingerprint"
+          }
+
+          reauthentication_attempted=false
           lastState=""
-          while state="$(getState)"; do
-            if [[ "$state" != "$lastState" ]]; then
+          while status="$(getStatus)" && [[ -n "$status" ]]; do
+            state="$(${lib.getExe pkgs.jq} -r '.BackendState' <<< "$status")"
+            online="$(${lib.getExe pkgs.jq} -r '.Self.Online // false' <<< "$status")"
+            observed_state="$state:$online"
+            if [[ "$observed_state" != "$lastState" ]]; then
               case "$state" in
                 NeedsLogin|NeedsMachineAuth|Stopped)
                   echo "Server needs authentication, sending auth key file"
                   ${lib.getExe cfg.package} up \
                     --auth-key "file:$auth_key_file" \
                     ${lib.escapeShellArgs cfg.extraUpFlags}
+                  reauthentication_attempted=true
                   ;;
                 Running)
-                  echo "Tailscale is running"
-                  ${pkgs.systemd}/bin/systemd-notify --ready
-                  exit 0
+                  if [[ "$online" == true ]]; then
+                    if [[ "$stored_auth_key_fingerprint" != "$auth_key_fingerprint" ]]; then
+                      storeAuthKeyFingerprint
+                    fi
+                    echo "Tailscale is running"
+                    ${pkgs.systemd}/bin/systemd-notify --ready
+                    exit 0
+                  elif [[ "$stored_auth_key_fingerprint" != "$auth_key_fingerprint" \
+                    && "$reauthentication_attempted" == false ]]; then
+                    echo "Tailscale identity is stale, reauthenticating with bootstrap key file"
+                    ${lib.getExe cfg.package} up \
+                      --force-reauth \
+                      --auth-key "file:$auth_key_file" \
+                      ${lib.escapeShellArgs cfg.extraUpFlags}
+                    reauthentication_attempted=true
+                  elif [[ "$stored_auth_key_fingerprint" == "$auth_key_fingerprint" ]]; then
+                    echo "Tailscale is running without current control connectivity"
+                    ${pkgs.systemd}/bin/systemd-notify --ready
+                    exit 0
+                  fi
                   ;;
                 *)
                   echo "Waiting for Tailscale State = Running or systemd timeout"
@@ -119,7 +158,7 @@ in
               esac
               echo "State = $state"
             fi
-            lastState="$state"
+            lastState="$observed_state"
             ${pkgs.coreutils}/bin/sleep .5
           done
         '';
