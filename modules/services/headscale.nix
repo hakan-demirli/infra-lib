@@ -104,10 +104,7 @@ in
           };
         };
 
-        tailscale.extraUpFlags = [
-          "--login-server=https://${cfg.serverUrl}"
-          "--advertise-exit-node"
-        ];
+        tailscale.extraUpFlags = [ "--advertise-exit-node" ];
       };
 
       environment.persistence = lib.mkIf impermanenceEnabled {

@@ -37,6 +37,35 @@ let
   bluetooth = evalModule "/modules/system/bluetooth.nix" { };
   bluetoothSleepState = bluetooth.systemd.services.bluetooth-sleep-state;
   bluetoothStateTool = lib.removeSuffix " save" bluetoothSleepState.serviceConfig.ExecStart;
+  tailscaleAuth = evalModule "/modules/services/tailscale.nix" {
+    imports = [ inputs.sops-nix.nixosModules.sops ];
+    networking.useHostResolvConf = lib.mkForce false;
+    services.tailscale = {
+      loginServerHost = "headscale.example";
+      useAuthKey = false;
+      authKeyFile = "/run/keys/tailscale";
+      authKeyParameters.ephemeral = true;
+    };
+  };
+  tailscaleAutoconnect = tailscaleAuth.systemd.services.tailscaled-autoconnect;
+  mungeSops = evalModule "/modules/services/munge-sops.nix" (
+    { lib, ... }:
+    {
+      options.sops.secrets = lib.mkOption {
+        type = lib.types.attrsOf (
+          lib.types.submodule {
+            options.path = lib.mkOption { type = lib.types.str; };
+          }
+        );
+        default = { };
+      };
+      config = {
+        services.munge.enable = true;
+        sops.secrets."munge-key".path = "/run/secrets/munge-key";
+      };
+    }
+  );
+  mungeService = mungeSops.systemd.services.munged;
 
   checks = {
     role-identity-does-not-mask-persistent-state = !(roleIdentity.fileSystems ? "/persist/system");
@@ -54,6 +83,27 @@ let
       && bluetoothSleepState.serviceConfig.Type == "oneshot"
       && bluetoothSleepState.serviceConfig.RemainAfterExit
       && bluetoothSleepState.serviceConfig.RuntimeDirectoryMode == "0700";
+    tailscale-auth-key-stays-file-backed =
+      tailscaleAuth.services.tailscale.extraUpFlags == [
+        "--reset"
+        "--login-server=https://headscale.example"
+      ]
+      && tailscaleAutoconnect.serviceConfig.LoadCredential == [ "auth-key:/run/keys/tailscale" ]
+      && tailscaleAutoconnect.serviceConfig.TimeoutStartSec == "60s"
+      && lib.hasInfix ''--auth-key "file:$auth_key_file"'' tailscaleAutoconnect.script
+      && lib.hasInfix ''runtime_auth_key="$RUNTIME_DIRECTORY/auth-key"'' tailscaleAutoconnect.script
+      && lib.hasInfix "?ephemeral=true" tailscaleAutoconnect.script
+      && !lib.hasInfix "cat /run/keys/tailscale" tailscaleAutoconnect.script
+      && !lib.any (lib.hasPrefix "--advertise-tags") tailscaleAuth.services.tailscale.extraUpFlags;
+    munge-sops-uses-owned-runtime-key =
+      mungeSops.services.munge.password == "/run/munge/munge.key"
+      && lib.elem "sops-install-secrets.service" mungeService.after
+      && lib.elem "sops-install-secrets.service" mungeService.requires
+      && lib.length mungeService.serviceConfig.ExecStartPre == 1
+      && lib.hasPrefix "+" (lib.head mungeService.serviceConfig.ExecStartPre)
+      && lib.hasInfix "-o munge -g munge -m 0400 /run/secrets/munge-key /run/munge/munge.key" (
+        lib.head mungeService.serviceConfig.ExecStartPre
+      );
     reverse-ssh-client-disabled-payload = hasFailure "payload is configured" (
       evalModule "/modules/services/reverse-ssh-client.nix" {
         services.reverse-ssh-client.remoteHost = "gateway.example";
@@ -111,6 +161,8 @@ pkgs.runCommand "module-contracts"
     failureCount = toString (lib.length failures);
     failureNames = lib.concatStringsSep "," failures;
     inherit bluetoothStateTool;
+    tailscaleSystem = tailscaleAuth.system.build.toplevel;
+    mungeSystem = mungeSops.system.build.toplevel;
   }
   ''
     if [ "$failureCount" != 0 ]; then
@@ -124,5 +176,7 @@ pkgs.runCommand "module-contracts"
       echo "Bluetooth state helper hardcodes an adapter path" >&2
       exit 1
     fi
+    test -e "$tailscaleSystem"
+    test -e "$mungeSystem"
     touch "$out"
   ''

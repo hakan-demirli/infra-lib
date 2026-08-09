@@ -24,6 +24,8 @@ let
   }";
 in
 {
+  imports = [ ./munge-sops.nix ];
+
   options.services.slurm-client = {
     enable = lib.mkOption {
       type = lib.types.bool;

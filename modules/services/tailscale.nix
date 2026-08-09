@@ -1,6 +1,7 @@
 {
   config,
   lib,
+  pkgs,
   host ? null,
   ...
 }:
@@ -8,8 +9,16 @@ let
   cfg = config.services.tailscale;
   hostLabels = if host == null then { } else (host.labels or { });
   authKeyDefault = (hostLabels.tailscale_auth_key or "true") == "true";
-  advertiseBootstrap = (hostLabels.tailscale_bootstrap_tag or "true") == "true";
   impermanenceEnabled = host != null && (host.impermanence.enable or false);
+  inherit (cfg) authKeyFile;
+  authKeyParameters = lib.pipe cfg.authKeyParameters [
+    (lib.filterAttrs (_: value: value != null))
+    (lib.mapAttrsToList (
+      name: value: "${name}=${if builtins.isBool value then lib.boolToString value else toString value}"
+    ))
+    (builtins.concatStringsSep "&")
+    (parameters: if parameters == "" then "" else "?${parameters}")
+  ];
 in
 {
   options.services.tailscale = {
@@ -23,19 +32,8 @@ in
       description = ''
         Whether to use a sops-managed auth key for automatic registration.
         Default is true unless overridden by host label
-        `tailscale_auth_key = "false"`. When false, the operator must run
-        `sudo tailscale up --login-server=... --advertise-tags=...` by hand.
-      '';
-    };
-    advertiseBootstrapTag = lib.mkOption {
-      type = lib.types.bool;
-      default = advertiseBootstrap;
-      description = ''
-        Whether to advertise `tag:bootstrap` on first login. The
-        headscale ACL gives this tag NO outbound and only admin
-        inbound; promote with
-          sudo headscale nodes tag -i <id> -t tag:<real>
-        once the node is in inventory.
+        `tailscale_auth_key = "false"`. Auth keys that create tagged nodes
+        must carry their tags server-side.
       '';
     };
   };
@@ -48,9 +46,9 @@ in
       authKeyFile = lib.mkIf cfg.useAuthKey config.sops.secrets.tailscale-key.path;
       useRoutingFeatures = "client";
       extraUpFlags = [
+        "--reset"
         "--login-server=https://${cfg.loginServerHost}"
-      ]
-      ++ lib.optional cfg.advertiseBootstrapTag "--advertise-tags=tag:bootstrap";
+      ];
     };
 
     networking = {
@@ -71,14 +69,61 @@ in
       ];
     };
 
-    systemd.services.tailscaled-autoconnect = {
-      unitConfig = {
-        DefaultDependencies = false;
-      };
-      serviceConfig = {
-        TimeoutStartSec = "5s";
-        Restart = "no";
-      };
-    };
+    systemd.services.tailscaled-autoconnect = lib.mkMerge [
+      {
+        unitConfig.DefaultDependencies = false;
+        serviceConfig.Restart = "no";
+      }
+      (lib.mkIf (authKeyFile != null) {
+        after = lib.optional cfg.useAuthKey "sops-install-secrets.service";
+        requires = lib.optional cfg.useAuthKey "sops-install-secrets.service";
+        serviceConfig = {
+          LoadCredential = [ "auth-key:${authKeyFile}" ];
+          RuntimeDirectory = "tailscaled-autoconnect";
+          RuntimeDirectoryMode = "0700";
+          TimeoutStartSec = "60s";
+        };
+        script = lib.mkForce ''
+          getState() {
+            ${lib.getExe cfg.package} status --json --peers=false \
+              | ${lib.getExe pkgs.jq} -r '.BackendState'
+          }
+
+          auth_key_file="$CREDENTIALS_DIRECTORY/auth-key"
+          ${lib.optionalString (authKeyParameters != "") ''
+            runtime_auth_key="$RUNTIME_DIRECTORY/auth-key"
+            ${pkgs.coreutils}/bin/tr -d '\n' < "$auth_key_file" > "$runtime_auth_key"
+            printf '%s' ${lib.escapeShellArg authKeyParameters} >> "$runtime_auth_key"
+            ${pkgs.coreutils}/bin/chmod 0600 "$runtime_auth_key"
+            auth_key_file="$runtime_auth_key"
+          ''}
+
+          lastState=""
+          while state="$(getState)"; do
+            if [[ "$state" != "$lastState" ]]; then
+              case "$state" in
+                NeedsLogin|NeedsMachineAuth|Stopped)
+                  echo "Server needs authentication, sending auth key file"
+                  ${lib.getExe cfg.package} up \
+                    --auth-key "file:$auth_key_file" \
+                    ${lib.escapeShellArgs cfg.extraUpFlags}
+                  ;;
+                Running)
+                  echo "Tailscale is running"
+                  ${pkgs.systemd}/bin/systemd-notify --ready
+                  exit 0
+                  ;;
+                *)
+                  echo "Waiting for Tailscale State = Running or systemd timeout"
+                  ;;
+              esac
+              echo "State = $state"
+            fi
+            lastState="$state"
+            ${pkgs.coreutils}/bin/sleep .5
+          done
+        '';
+      })
+    ];
   };
 }

@@ -38,12 +38,10 @@ pkgs.testers.runNixOSTest {
 
     admin_laptop = testlib.mkTailscaleNode { };
 
-    bootstrap_a = testlib.mkTailscaleNode { extraUpFlags = [ "--advertise-tags=tag:bootstrap" ]; };
-    bootstrap_b = testlib.mkTailscaleNode { extraUpFlags = [ "--advertise-tags=tag:bootstrap" ]; };
+    bootstrap_a = testlib.mkTailscaleNode { };
+    bootstrap_b = testlib.mkTailscaleNode { };
 
-    priv_compute = testlib.mkTailscaleNode {
-      extraUpFlags = [ "--advertise-tags=tag:cluster-priv-compute" ];
-    };
+    priv_compute = testlib.mkTailscaleNode { };
   };
 
   testScript = ''

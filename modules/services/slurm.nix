@@ -86,6 +86,8 @@ let
   partitionNameList = lib.mapAttrsToList partitionLine partitions;
 in
 {
+  imports = [ ./munge-sops.nix ];
+
   options.services.slurm-cluster = {
     enable = lib.mkOption {
       type = lib.types.bool;
