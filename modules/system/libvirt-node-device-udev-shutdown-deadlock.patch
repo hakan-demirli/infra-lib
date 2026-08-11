@@ -1,0 +1,21 @@
+From: Christopher Johannimloh
+Subject: node_device_udev: fix deadlock joining udev thread under lock
+
+Upstream-Status: Submitted [https://www.mail-archive.com/devel@lists.libvirt.org/msg17492.html]
+Fixes: e89d39f5b8f30f0b3284ed2bd71cee1a8a3d707d
+
+The shutdown thread must not hold the udevEventData lock while joining the
+udev thread. The udev thread needs that lock to observe udevThreadQuit and
+exit, otherwise libvirt reaches its 30 second forced-shutdown timeout.
+
+diff --git a/src/node_device/node_device_udev.c b/src/node_device/node_device_udev.c
+index 104433fb88..28c8f00361 100644
+--- a/src/node_device/node_device_udev.c
++++ b/src/node_device/node_device_udev.c
+@@ -2485,4 +2485,2 @@ nodeStateShutdownWait(void)
+-    VIR_WITH_OBJECT_LOCK_GUARD(priv) {
+-        if (priv->udevThread)
+-            virThreadJoin(priv->udevThread);
+-    }
++    if (priv->udevThread)
++        virThreadJoin(priv->udevThread);
