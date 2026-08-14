@@ -8,10 +8,11 @@ _: {
     enableNotifications = false;
     extraArgs = [
       "-g"
+      "--sort-by-rss"
       "--avoid"
-      "^(kitty|ssh|sshd|systemd|systemd-logind|sddm|Hyprland|Xorg|waybar|pipewire-pulse|wireplumber|scrd|dbus-daemon|gpg-agent|ssh-agent)$"
+      "^(kitty|ssh|sshd|tmux.*|systemd|systemd-logind|[(]sd-pam[)]|sddm|Hyprland|Xorg|waybar|pipewire-pulse|wireplumber|scrd|dbus-daemon|dbus-broker.*|gpg-agent|ssh-agent)$"
       "--prefer"
-      "^(electron|chrom|java|node|nix-daemon|cc1plus|rustc|cargo|gcc)$"
+      "^(electron|chrom|java|node|cc1plus|rustc|cargo|gcc)$"
     ];
   };
 }
