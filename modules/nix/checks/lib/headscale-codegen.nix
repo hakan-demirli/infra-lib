@@ -108,11 +108,12 @@ pkgs.testers.runNixOSTest {
         and "tag:bootstrap:*" in rule["dst"]
         for rule in admin_policy["acls"]
     ), admin_policy
+    assert admin_policy["tagOwners"]["tag:metrics"] == ["group:admin"], admin_policy
     assert any(
         "tag:cluster-personal-controller" in rule["src"]
         and sorted(rule["dst"]) == [
-            "tag:fleet-admin-client:9100",
-            "tag:fleet-admin-client:9633",
+            "tag:metrics:9100",
+            "tag:metrics:9633",
         ]
         for rule in admin_policy["acls"]
     ), admin_policy

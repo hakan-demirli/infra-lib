@@ -229,6 +229,13 @@ in
 
       broadTagOf = cid: "tag:${baseOf cid}";
       fleetAdminTag = "tag:fleet-admin-client";
+      metricsTag = "tag:metrics";
+      nixCacheTag = "tag:nix-binary-cache";
+      fleetServicePorts = {
+        logs = 9428;
+        nixCache = 5101;
+        inbox = 873;
+      };
       adminClientHosts = filter (
         h:
         elem "admin-client" (h.topology_roles or [ ])
@@ -247,16 +254,21 @@ in
         slurm = 6817;
         zfs = 9134;
       };
-      adminMonitoringPorts = unique (
+      isMonitoredHost =
+        h:
+        (h.monitoring.enabled or true)
+        && !(elem h.state [
+          "retired"
+          "decommissioned"
+        ]);
+      monitoredHosts = filter isMonitoredHost (attrValues hosts);
+      monitoringPorts = unique (
         concatMap (
           h:
-          if h.monitoring.enabled or true then
-            filter (port: port != null) (
-              map (exporter: exporterPortMap.${exporter} or null) (h.monitoring.exporters or [ ])
-            )
-          else
-            [ ]
-        ) adminClientHosts
+          filter (port: port != null) (
+            map (exporter: exporterPortMap.${exporter} or null) (h.monitoring.exporters or [ ])
+          )
+        ) monitoredHosts
       );
 
       loginTagOf =
@@ -316,6 +328,8 @@ in
           "tag:bootstrap" = [ "group:admin" ];
           "tag:drive-share" = [ "group:admin" ];
           "tag:drive-access" = [ "group:admin" ];
+          ${metricsTag} = [ "group:admin" ];
+          ${nixCacheTag} = [ "group:admin" ];
         }
         // optionalAttrs hasAdminClients {
           ${fleetAdminTag} = [ "group:admin" ];
@@ -332,10 +346,10 @@ in
         let
           controllerTag = controllerTagOf cid;
         in
-        optional (hasAdminClients && controllerTag != null && adminMonitoringPorts != [ ]) {
+        optional (controllerTag != null && monitoringPorts != [ ]) {
           action = "accept";
           src = [ controllerTag ];
-          dst = map (port: "${fleetAdminTag}:${toString port}") adminMonitoringPorts;
+          dst = map (port: "${metricsTag}:${toString port}") monitoringPorts;
         }
       ) (attrNames activeClusters);
 
@@ -344,6 +358,45 @@ in
         src = [ "tag:drive-access" ];
         dst = [ "tag:drive-share:*" ];
       };
+
+      logsRules = concatMap (
+        cid:
+        let
+          controllerTag = controllerTagOf cid;
+        in
+        optional (controllerTag != null) {
+          action = "accept";
+          src = [ (broadTagOf cid) ];
+          dst = [ "${controllerTag}:${toString fleetServicePorts.logs}" ];
+        }
+      ) (attrNames activeClusters);
+
+      nixCacheRules = concatMap (
+        cid:
+        let
+          controllerTag = controllerTagOf cid;
+        in
+        optional (controllerTag != null) {
+          action = "accept";
+          src = [ nixCacheTag ];
+          dst = [ "${controllerTag}:${toString fleetServicePorts.nixCache}" ];
+        }
+      ) (attrNames activeClusters);
+
+      inboxRules = concatMap (
+        cid:
+        let
+          senders = filter (t: t != null) [
+            (controllerTagOf cid)
+            (computeTagOf cid)
+          ];
+        in
+        optional (hasAdminClients && senders != [ ]) {
+          action = "accept";
+          src = senders;
+          dst = [ "${fleetAdminTag}:${toString fleetServicePorts.inbox}" ];
+        }
+      ) (attrNames activeClusters);
 
       computeMeshRules = concatMap (
         cid:
@@ -510,6 +563,9 @@ in
         driveRule
       ]
       ++ monitoringRules
+      ++ logsRules
+      ++ nixCacheRules
+      ++ inboxRules
       ++ computeMeshRules
       ++ loginToComputeRules
       ++ computeToStorageRules

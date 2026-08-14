@@ -31,6 +31,13 @@ let
 
   broadTagOf = cid: "tag:${baseOfCluster cid}";
   fleetAdminTag = "tag:fleet-admin-client";
+  metricsTag = "tag:metrics";
+  nixCacheTag = "tag:nix-binary-cache";
+  fleetServicePorts = {
+    logs = 9428;
+    nixCache = 5101;
+    inbox = 873;
+  };
   adminClientHosts = filter (
     h:
     elem "admin-client" (h.topology_roles or [ ])
@@ -49,16 +56,21 @@ let
     slurm = 6817;
     zfs = 9134;
   };
-  adminMonitoringPorts = unique (
+  isMonitoredHost =
+    h:
+    (h.monitoring.enabled or true)
+    && !(elem h.state [
+      "retired"
+      "decommissioned"
+    ]);
+  monitoredHosts = filter isMonitoredHost (attrValues hosts);
+  monitoringPorts = unique (
     concatMap (
       h:
-      if h.monitoring.enabled or true then
-        filter (port: port != null) (
-          map (exporter: exporterPortMap.${exporter} or null) (h.monitoring.exporters or [ ])
-        )
-      else
-        [ ]
-    ) adminClientHosts
+      filter (port: port != null) (
+        map (exporter: exporterPortMap.${exporter} or null) (h.monitoring.exporters or [ ])
+      )
+    ) monitoredHosts
   );
   userOwnsAdminClient =
     uid:
@@ -99,30 +111,35 @@ let
     let
       cid = hostToCluster.${hid} or null;
       nrs = hostTopologyRoles.${hid} or [ ];
+      roleTags =
+        if elem "admin-client" nrs then
+          [ fleetAdminTag ]
+        else if cid == null then
+          [ ]
+        else
+          let
+            base = baseOfCluster cid;
+            sub =
+              role:
+              (
+                if role == "login" && (loginNodesOfCluster.${cid} or [ ]) != [ ] then
+                  "tag:${base}-login"
+                else if role == "compute" && (computeNodesOfCluster.${cid} or [ ]) != [ ] then
+                  "tag:${base}-compute"
+                else if role == "storage" && (storageNodesOfCluster.${cid} or [ ]) != [ ] then
+                  "tag:${base}-storage"
+                else if role == "controller" && (controllerNodesOfCluster.${cid} or [ ]) != [ ] then
+                  "tag:${base}-controller"
+                else
+                  null
+              );
+          in
+          unique ([ (broadTagOf cid) ] ++ filter (t: t != null) (map sub nrs));
+      clusterHasController = cid != null && (controllerNodesOfCluster.${cid} or [ ]) != [ ];
     in
-    if elem "admin-client" nrs then
-      [ fleetAdminTag ]
-    else if cid == null then
-      [ ]
-    else
-      let
-        base = baseOfCluster cid;
-        sub =
-          role:
-          (
-            if role == "login" && (loginNodesOfCluster.${cid} or [ ]) != [ ] then
-              "tag:${base}-login"
-            else if role == "compute" && (computeNodesOfCluster.${cid} or [ ]) != [ ] then
-              "tag:${base}-compute"
-            else if role == "storage" && (storageNodesOfCluster.${cid} or [ ]) != [ ] then
-              "tag:${base}-storage"
-            else if role == "controller" && (controllerNodesOfCluster.${cid} or [ ]) != [ ] then
-              "tag:${base}-controller"
-            else
-              null
-          );
-      in
-      unique ([ (broadTagOf cid) ] ++ filter (t: t != null) (map sub nrs));
+    roleTags
+    ++ optional (isMonitoredHost hosts.${hid}) metricsTag
+    ++ optional clusterHasController nixCacheTag;
 
   hostPolicyTags = mapAttrs (hid: _: policyTagsOfHost hid) hosts;
 
@@ -157,10 +174,43 @@ let
     let
       controllerTag = controllerTagOf cid;
     in
-    if !hasAdminClients || controllerTag == null then
+    if controllerTag == null then
       [ ]
     else
-      map (port: mkRule [ controllerTag ] fleetAdminTag (toString port) "monitoring") adminMonitoringPorts
+      map (port: mkRule [ controllerTag ] metricsTag (toString port) "monitoring") monitoringPorts
+  ) (attrNames activeClusters);
+
+  logsRules = concatMap (
+    cid:
+    let
+      controllerTag = controllerTagOf cid;
+    in
+    optional (controllerTag != null) (
+      mkRule [ (broadTagOf cid) ] controllerTag (toString fleetServicePorts.logs) "logs"
+    )
+  ) (attrNames activeClusters);
+
+  nixCacheRules = concatMap (
+    cid:
+    let
+      controllerTag = controllerTagOf cid;
+    in
+    optional (controllerTag != null) (
+      mkRule [ nixCacheTag ] controllerTag (toString fleetServicePorts.nixCache) "nix-cache"
+    )
+  ) (attrNames activeClusters);
+
+  inboxRules = concatMap (
+    cid:
+    let
+      senders = filter (t: t != null) [
+        (controllerTagOf cid)
+        (computeTagOf cid)
+      ];
+    in
+    optional (hasAdminClients && senders != [ ]) (
+      mkRule senders fleetAdminTag (toString fleetServicePorts.inbox) "inbox"
+    )
   ) (attrNames activeClusters);
 
   meshRules = concatMap (
@@ -268,6 +318,9 @@ let
   aclRules =
     adminRules
     ++ monitoringRules
+    ++ logsRules
+    ++ nixCacheRules
+    ++ inboxRules
     ++ meshRules
     ++ loginToComputeRules
     ++ computeToStorageRulesIntra
