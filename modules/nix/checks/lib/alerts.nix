@@ -50,6 +50,7 @@ pkgs.testers.runNixOSTest {
 
       services = {
         cluster-alertmanager = {
+          channels.ntfy.enable = false;
           webhookUrl = "http://127.0.0.1:9999/alert";
           groupWait = "5s";
           groupInterval = "10s";

@@ -72,6 +72,9 @@
   analytics = import ./analytics.nix { inherit pkgs self inputs; };
   logs = import ./logs.nix { inherit pkgs self inputs; };
   alerts = import ./alerts.nix { inherit pkgs self inputs; };
+  alertmanager-notifications = import ./alertmanager-notifications.nix {
+    inherit pkgs self inputs;
+  };
   hardware-health = import ./hardware-health.nix { inherit pkgs self inputs; };
   slurm-metrics = import ./slurm-metrics.nix { inherit pkgs self inputs; };
   cephfs-replicated-read-cross-client = import ./cephfs-replicated-read-cross-client.nix {
