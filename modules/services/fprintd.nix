@@ -14,7 +14,7 @@ in
 
     security.pam.services = {
       sudo.fprintAuth = true;
-      hyprlock.fprintAuth = true;
+      hyprlock.fprintAuth = false;
       sddm.fprintAuth = true;
     };
 

@@ -9,6 +9,9 @@ _: {
       RUNTIME_PM_ON_AC = "auto";
       RUNTIME_PM_DENYLIST = "02:00.0";
 
+      DISK_IDLE_SECS_ON_AC = "";
+      DISK_IDLE_SECS_ON_BAT = "";
+
       PLATFORM_PROFILE_ON_AC = "balanced";
       CPU_SCALING_GOVERNOR_ON_AC = "performance";
       CPU_ENERGY_PERF_POLICY_ON_AC = "balance_power";

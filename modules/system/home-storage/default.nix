@@ -67,6 +67,7 @@ let
     ]) roots;
 
   commonMountService = {
+    restartIfChanged = false;
     after = [
       "local-fs.target"
       "systemd-tmpfiles-setup.service"
