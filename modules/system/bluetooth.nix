@@ -82,6 +82,8 @@ in
 {
   services.blueman.enable = true;
 
+  services.tlp.settings.DEVICES_TO_ENABLE_ON_STARTUP = "bluetooth";
+
   hardware.bluetooth = {
     enable = true;
     powerOnBoot = false;
