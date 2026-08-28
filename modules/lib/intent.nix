@@ -353,11 +353,18 @@ let
     in
     any (r: srcMatches r && dstMatches r) aclRules;
 
+  userAllowedOnHost =
+    uid: hid:
+    let
+      u = users.${uid} or null;
+    in
+    u != null && (elem "all" u.allowed_hosts || elem hid u.allowed_hosts);
+
   clusterAccountGrants = concatLists (
     map (
       hid:
       let
-        grants = inventory.usersOnHost.${hid} or [ ];
+        grants = filter (g: userAllowedOnHost g.user hid) (inventory.usersOnHost.${hid} or [ ]);
       in
       map (
         g:

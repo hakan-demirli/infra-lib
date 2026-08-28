@@ -7,6 +7,7 @@
 }:
 {
   inventory-validation = import ./inventory-validation.nix { inherit pkgs self; };
+  intent-account-scope = import ./intent-account-scope.nix { inherit pkgs self; };
   deployment-role-secrets = import ./deployment-role-secrets.nix { inherit pkgs self; };
   disko-wiring = import ./disko-wiring.nix { inherit pkgs self; };
   disko-installer-contract = import ./disko-installer-contract.nix { inherit pkgs self; };

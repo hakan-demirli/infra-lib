@@ -36,7 +36,6 @@ let
     "storage"
     "controller"
     "mgmt"
-    "personal"
     "external"
   ];
 
@@ -941,6 +940,11 @@ let
         type = ints.positive;
         default = 100;
       };
+      tailnet_member = mkOption {
+        type = bool;
+        default = true;
+        description = "Whether the host joins the tailnet; non-members get no cluster and no policy tag.";
+      };
       monitoring = mkOption {
         type = submodule {
           options = {
@@ -1314,7 +1318,7 @@ let
       kind = mkOption {
         type = enum [
           "shared"
-          "personal"
+          "single-user"
           "adhoc"
           "project"
           "temporary"

@@ -146,7 +146,7 @@ let
             name = tname;
             value = evalRaw types.teamModule {
               id = tname;
-              description = "Auto-implied personal team for ${uid}";
+              description = "Auto-implied single-member team for ${uid}";
               members = [
                 {
                   user = uid;
@@ -212,7 +212,7 @@ let
     in
     mapAttrsToList (hid: cids: "host '${hid}' is claimed by multiple clusters: ${toString cids}") bad;
 
-  unclaimedHosts = filterAttrs (hid: _: !(hostToClaimedCluster ? ${hid})) hosts;
+  unclaimedHosts = filterAttrs (hid: h: !(hostToClaimedCluster ? ${hid}) && h.tailnet_member) hosts;
 
   hostStateToClusterState =
     hs:
@@ -234,8 +234,8 @@ let
       name = cid;
       value = evalRaw types.clusterModule {
         id = cid;
-        description = "Auto-implied personal cluster for ${hid}";
-        kind = "personal";
+        description = "Auto-implied single-user cluster for ${hid}";
+        kind = "single-user";
         state = hostStateToClusterState h.state;
         ownership = {
           class = h.ownership.class;
