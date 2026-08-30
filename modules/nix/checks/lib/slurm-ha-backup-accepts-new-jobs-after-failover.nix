@@ -36,10 +36,7 @@ pkgs.testers.runNixOSTest {
 
     with subtest("failover to backup"):
         ctld_a.succeed("systemctl stop slurmctld.service")
-        ctld_b.wait_until_succeeds(
-            "scontrol ping 2>&1 | grep -iE 'ctld-b.*(primary|UP)'",
-            timeout=180,
-        )
+        wait_for_backup_takeover()
 
     with subtest("backup accepts a new sbatch submission"):
         out = ctld_b.succeed(

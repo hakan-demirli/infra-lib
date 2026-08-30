@@ -50,10 +50,7 @@ pkgs.testers.runNixOSTest {
 
     with subtest("kill primary; wait for backup takeover"):
         ctld_a.succeed("systemctl stop slurmctld.service")
-        ctld_b.wait_until_succeeds(
-            "scontrol ping 2>&1 | grep -iE 'ctld-b.*(primary|UP)'",
-            timeout=180,
-        )
+        wait_for_backup_takeover()
 
     with subtest("all 3 jobs still in queue on the backup"):
         squeue_b = ctld_b.succeed("squeue -h -o %i")

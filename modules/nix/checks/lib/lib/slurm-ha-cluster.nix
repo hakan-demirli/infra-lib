@@ -37,7 +37,6 @@ let
     '';
 
     cgroupConf = ''
-      CgroupAutomount=yes
       ConstrainCores=yes
       ConstrainRAMSpace=yes
     '';
@@ -91,6 +90,7 @@ let
           options = [
             "noatime"
             "vers=4.2"
+            "noac"
           ];
         };
       };
@@ -127,6 +127,7 @@ let
       };
       systemd = {
         services.slurmctld = {
+          wantedBy = lib.mkForce [ ];
           unitConfig.RequiresMountsFor = "/var/spool/slurm-state";
           after = [ "var-spool-slurm\\x2dstate.mount" ];
         };
@@ -178,9 +179,12 @@ let
         extraConfig = cfg.slurmExtraConfig;
         extraCgroupConfig = cfg.cgroupConf;
       };
-      systemd.tmpfiles.rules = [
-        "d /var/log/slurm 0755 slurm slurm -"
-      ];
+      systemd = {
+        services.slurmd.wantedBy = lib.mkForce [ ];
+        tmpfiles.rules = [
+          "d /var/log/slurm 0755 slurm slurm -"
+        ];
+      };
       environment.etc."munge/munge.key" = {
         text = cfg.mungeKey;
         mode = "0400";
@@ -198,25 +202,51 @@ let
         shared_state.wait_for_unit("network-online.target", timeout=60)
 
     for n in (ctld_a, ctld_b, compute_1, compute_2):
-        n.wait_for_unit("network.target")
+        n.succeed("systemctl start network-online.target")
+        n.wait_for_unit("network-online.target", timeout=60)
         n.wait_for_unit("munged.service", timeout=60)
 
-    with subtest("[ha fixture] mount NFS state on both ctlds"):
+    with subtest("[ha fixture] mount coherent NFS state on both ctlds"):
         for n in (ctld_a, ctld_b):
-            n.succeed("systemctl start network-online.target")
-            n.wait_for_unit("network-online.target", timeout=60)
             n.wait_for_unit("var-spool-slurm\\x2dstate.mount", timeout=120)
             n.succeed("mountpoint -q /var/spool/slurm-state")
+            n.succeed(
+                "findmnt -n -o OPTIONS /var/spool/slurm-state | grep -qw noac"
+            )
 
-    with subtest("[ha fixture] slurmctld + slurmd come up"):
+    with subtest("[ha fixture] start primary before backup"):
+        ctld_a.succeed("systemctl start slurmctld.service")
         ctld_a.wait_for_unit("slurmctld.service", timeout=180)
-        ctld_b.wait_for_unit("slurmctld.service", timeout=180)
-        compute_1.wait_for_unit("slurmd.service", timeout=180)
-        compute_2.wait_for_unit("slurmd.service", timeout=180)
-
-    with subtest("[ha fixture] partition reaches idle (cluster ready)"):
         ctld_a.wait_until_succeeds(
-            "sinfo -h -o '%T' | grep -E 'idle|allocated'", timeout=180
+            "scontrol ping 2>&1 "
+            "| grep -Fq 'Slurmctld(primary) at ctld-a is UP'",
+            timeout=120,
+        )
+
+        ctld_b.succeed("systemctl start slurmctld.service")
+        ctld_b.wait_for_unit("slurmctld.service", timeout=180)
+        ctld_a.wait_until_succeeds(
+            "scontrol ping 2>&1 "
+            "| grep -Fq 'Slurmctld(backup) at ctld-b is UP'",
+            timeout=120,
+        )
+
+    with subtest("[ha fixture] start computes and require both nodes idle"):
+        for compute in (compute_1, compute_2):
+            compute.succeed("systemctl start slurmd.service")
+            compute.wait_for_unit("slurmd.service", timeout=180)
+
+        for node in ("compute-1", "compute-2"):
+            ctld_a.wait_until_succeeds(
+                f"scontrol show node {node} -o | grep -q 'State=IDLE'",
+                timeout=180,
+            )
+
+    def wait_for_backup_takeover():
+        ctld_b.wait_until_succeeds(
+            "grep -q 'Running as primary controller' "
+            "/var/log/slurm/slurmctld.log",
+            timeout=180,
         )
   '';
 

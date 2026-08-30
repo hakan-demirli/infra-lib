@@ -38,10 +38,7 @@ pkgs.testers.runNixOSTest {
         ctld_a.succeed("systemctl stop slurmctld.service")
 
     with subtest("backup takes over"):
-        ctld_b.wait_until_succeeds(
-            "scontrol ping 2>&1 | grep -iE 'ctld-b.*(primary|UP)'",
-            timeout=180,
-        )
+        wait_for_backup_takeover()
         print("INVARIANT HELD: backup slurmctld took over within "
               "SlurmctldTimeout after primary died")
   '';
