@@ -8,6 +8,11 @@ let
     compute1Ip = "192.168.1.20";
     compute2Ip = "192.168.1.21";
 
+    nodeNames = [
+      "compute-1 NodeAddr=${compute1Ip} CPUs=2 RealMemory=512 State=UNKNOWN"
+      "compute-2 NodeAddr=${compute2Ip} CPUs=2 RealMemory=512 State=UNKNOWN"
+    ];
+
     mungeKey = "test-munge-key-test-munge-key-test-munge-key-test-munge-key-1234";
 
     etcHosts = ''
@@ -114,7 +119,7 @@ let
         };
         slurm = {
           inherit (cfg) clusterName;
-          nodeName = [ "compute-[1-2] CPUs=2 RealMemory=512 State=UNKNOWN" ];
+          nodeName = cfg.nodeNames;
           partitionName = [
             "test Nodes=compute-[1-2] Default=YES MaxTime=INFINITE State=UP"
           ];
@@ -128,6 +133,9 @@ let
       systemd = {
         services.slurmctld = {
           wantedBy = lib.mkForce [ ];
+          preStart = lib.mkForce ''
+            test "$(stat -c %U:%G /var/spool/slurm-state)" = "slurm:slurm"
+          '';
           unitConfig.RequiresMountsFor = "/var/spool/slurm-state";
           after = [ "var-spool-slurm\\x2dstate.mount" ];
         };
@@ -169,7 +177,7 @@ let
       };
       services.slurm = {
         inherit (cfg) clusterName;
-        nodeName = [ "compute-[1-2] CPUs=2 RealMemory=512 State=UNKNOWN" ];
+        nodeName = cfg.nodeNames;
         partitionName = [
           "test Nodes=compute-[1-2] Default=YES MaxTime=INFINITE State=UP"
         ];
