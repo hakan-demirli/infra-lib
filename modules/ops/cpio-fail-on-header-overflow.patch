@@ -1,8 +1,7 @@
 diff --git a/src/copyout.c b/src/copyout.c
 --- a/src/copyout.c
 +++ b/src/copyout.c
-@@ -282,15 +282,16 @@ to_ascii (char *where, uintmax_t v, size_t digits, unsigned logbase, bool nul)
- }
+@@ -285,14 +285,15 @@ to_ascii (char *where, uintmax_t v, size_t digits, unsigned logbase, bool nul)
  
  void
  field_width_error (const char *filename, const char *fieldname,
@@ -14,14 +13,14 @@ diff --git a/src/copyout.c b/src/copyout.c
 -  error (0, 0, _("%s: value %s %s out of allowed range 0..%s"),
 +  error (PAXEXIT_FAILURE, 0,
 +	 _("%s: value %s %s out of allowed range 0..%s"),
- 	 filename, fieldname,
+ 	 quote (filename), fieldname,
  	 STRINGIFY_BIGINT (value, valbuf),
 -	 STRINGIFY_BIGINT (MAX_VAL_WITH_DIGITS (width - nul, LG_8),
 +	 STRINGIFY_BIGINT (MAX_VAL_WITH_DIGITS (width - nul, logbase),
  			   maxbuf));
  }
  
-@@ -317,7 +318,7 @@ to_ascii_or_error (char *where, uintmax_t n, size_t digits,
+@@ -319,7 +320,7 @@ to_ascii_or_error (char *where, uintmax_t n, size_t digits,
  {
    if (to_ascii (where, n, digits, logbase, false))
      {
@@ -46,7 +45,7 @@ diff --git a/src/extern.h b/src/extern.h
 diff --git a/src/tar.c b/src/tar.c
 --- a/src/tar.c
 +++ b/src/tar.c
-@@ -84,7 +84,7 @@ to_oct_or_error (uintmax_t value, size_t digits, char *where, char const *field,
+@@ -86,7 +86,7 @@ to_oct_or_error (uintmax_t value, size_t digits, char *where, char const *field,
  {
    if (to_ascii (where, value, digits, LG_8, true))
      {

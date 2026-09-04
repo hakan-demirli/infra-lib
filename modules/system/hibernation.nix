@@ -109,10 +109,10 @@ in
       "acpi_sleep=s4_nonvs"
     ];
 
-    services.journald.extraConfig = ''
-      Storage=persistent
-      SystemMaxUse=2G
-      RuntimeMaxUse=200M
-    '';
+    services.journald.settings.Journal = {
+      Storage = "persistent";
+      SystemMaxUse = "2G";
+      RuntimeMaxUse = "200M";
+    };
   };
 }
