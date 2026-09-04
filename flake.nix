@@ -7,7 +7,8 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    # Ceph 20.2.2 is broken in newer nixpkgs revisions until nixpkgs#548582 lands.
+    # Ceph's python312 env is broken in nixos-unstable: inline-snapshot doc
+    # tests fail against black 26.5.1. Remove once nixpkgs#560020 lands.
     nixpkgs-ceph.url = "github:NixOS/nixpkgs/892439827cd72d4a390a3f341f19c2a0224b83b0";
     flake-parts = {
       url = "github:hercules-ci/flake-parts";
