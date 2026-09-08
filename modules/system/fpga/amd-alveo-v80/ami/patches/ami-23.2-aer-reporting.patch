@@ -1,0 +1,16 @@
+--- ami_top.c
++++ ami_top.c
+@@ -382,0 +383,5 @@ int pcie_device_probe(struct pci_dev *dev, const struct pci_device_id *id)
++	ret = pcie_capability_set_word(dev, PCI_EXP_DEVCTL,
++		PCI_EXP_DEVCTL_CERE | PCI_EXP_DEVCTL_NFERE |
++		PCI_EXP_DEVCTL_FERE | PCI_EXP_DEVCTL_URRE);
++	if (ret)
++		DEV_WARN(dev, "Failed to enable PCIe error reporting: %d", ret);
+@@ -386,0 +392,3 @@ int pcie_device_probe(struct pci_dev *dev, const struct pci_device_id *id)
++		pcie_capability_clear_word(dev, PCI_EXP_DEVCTL,
++			PCI_EXP_DEVCTL_CERE | PCI_EXP_DEVCTL_NFERE |
++			PCI_EXP_DEVCTL_FERE | PCI_EXP_DEVCTL_URRE);
+@@ -487,0 +496,3 @@ void pcie_device_remove(struct pci_dev *dev)
++	pcie_capability_clear_word(dev, PCI_EXP_DEVCTL,
++		PCI_EXP_DEVCTL_CERE | PCI_EXP_DEVCTL_NFERE |
++		PCI_EXP_DEVCTL_FERE | PCI_EXP_DEVCTL_URRE);

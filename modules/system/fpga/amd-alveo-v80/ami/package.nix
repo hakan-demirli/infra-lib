@@ -21,7 +21,9 @@ stdenv.mkDerivation (finalAttrs: {
 
   postPatch = ''
     patch -d driver -p0 < ${./patches/ami-23.2-Makefile.patch}
+    patch -d driver -p0 < ${./patches/ami-23.2-aer-reporting.patch}
     patch -d driver -p0 < ${./patches/ami-23.2-ami_amc_control.patch}
+    patch -d driver -p0 < ${./patches/ami-23.2-background-workers.patch}
     patch -d driver -p0 < ${./patches/ami-23.2-ami_cdev.patch}
     patch -d driver -p0 < ${./patches/ami-23.2-ami_sensor.patch}
     patch -d driver -p0 < ${./patches/ami-23.2-ami_sysfs.patch}

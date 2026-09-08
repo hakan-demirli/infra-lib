@@ -6,7 +6,10 @@
 let
   cfg = config.hardware.fpga;
   devices = lib.attrValues cfg.devices;
-  pciAddresses = map (device: device.pciAddress) devices;
+  pciAddresses = lib.concatMap (device: [
+    device.parentPciAddress
+    device.pciAddress
+  ]) devices;
 in
 {
   imports = [ ./amd-alveo-v80.nix ];
@@ -47,7 +50,7 @@ in
     }
     {
       assertion = lib.length pciAddresses == lib.length (lib.unique pciAddresses);
-      message = "hardware.fpga.devices contains duplicate PCI addresses.";
+      message = "hardware.fpga.devices contains overlapping PCI or parent addresses.";
     }
   ];
 }

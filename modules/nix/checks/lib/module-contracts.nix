@@ -33,7 +33,9 @@ let
       assertion: !assertion.assertion && lib.hasInfix needle assertion.message
     ) evaluated.assertions;
 
-  hostIdentity = evalModule "/modules/common/host-identity.nix" { };
+  hostIdentity = evalModule "/modules/common/host-identity.nix" {
+    cluster.host.id = "inventory-host";
+  };
   bluetooth = evalModule "/modules/system/bluetooth.nix" { };
   bluetoothSleepState = bluetooth.systemd.services.bluetooth-sleep-state;
   bluetoothStateTool = lib.removeSuffix " save" bluetoothSleepState.serviceConfig.ExecStart;
@@ -49,6 +51,17 @@ let
   };
   fpgaGuard = fpga.systemd.services.fpga-v80-power-guard;
   fpgaAmi = fpga.systemd.services.fpga-v80-ami;
+  fpgaAutoLoad = evalModule "/modules/system/fpga" {
+    hardware.fpga = {
+      enable = true;
+      amdAlveoV80.autoLoad = true;
+      devices.v80 = {
+        kind = "amd-alveo-v80";
+        pciAddress = "0000:01:00.0";
+        parentPciAddress = "0000:00:01.1";
+      };
+    };
+  };
   fpgaEnabledWithoutDevices = evalModule "/modules/system/fpga" {
     hardware.fpga.enable = true;
   };
@@ -91,6 +104,7 @@ let
 
   checks = {
     host-identity-does-not-mask-persistent-state = !(hostIdentity.fileSystems ? "/persist/system");
+    host-identity-uses-inventory-id = hostIdentity.networking.hostName == "inventory-host";
     bluetooth-keeps-explicit-power-policy =
       bluetooth.hardware.bluetooth.enable
       && !bluetooth.hardware.bluetooth.powerOnBoot
@@ -108,8 +122,15 @@ let
     fpga-requires-explicit-selection =
       fpga.hardware.fpga.enable
       && fpga.hardware.fpga.devices.v80.kind == "amd-alveo-v80"
+      && !fpga.hardware.fpga.amdAlveoV80.autoLoad
+      && !fpga.hardware.fpga.amdAlveoV80.heartbeat
+      && !fpga.hardware.fpga.amdAlveoV80.logging
       && lib.elem "ami" fpga.boot.blacklistedKernelModules
+      && lib.hasInfix "options ami heartbeat=0 logging=0" fpga.boot.extraModprobeConfig
       && lib.any (package: lib.getName package == "ami") fpga.boot.extraModulePackages;
+    fpga-auto-load-is-explicit =
+      fpgaAmi.wantedBy == [ ]
+      && fpgaAutoLoad.systemd.services.fpga-v80-ami.wantedBy == [ "multi-user.target" ];
     fpga-guards-power-before-module-load =
       lib.elem "systemd-modules-load.service" fpgaGuard.before
       && lib.elem "fpga-v80-power-guard.service" fpga.systemd.services.systemd-modules-load.after
@@ -117,7 +138,10 @@ let
       && lib.hasInfix "0000:00:01.1" fpgaGuard.script
       && lib.hasInfix "0000:01:00.0" fpgaGuard.script
       && lib.hasInfix "0001000b" fpgaAmi.script
+      && lib.hasInfix "already_ready" fpgaAmi.script
+      && lib.hasInfix "stable_samples == 10" fpgaAmi.script
       && lib.hasInfix "modprobe ami" fpgaAmi.script
+      && lib.hasInfix "dev_state" fpgaAmi.script
       && lib.hasInfix ''KERNEL=="0000:01:00.0"'' fpga.services.udev.extraRules;
     fpga-rejects-enabled-without-devices = hasFailure "must be true exactly" fpgaEnabledWithoutDevices;
     fpga-rejects-disabled-with-device = hasFailure "must be true exactly" fpgaDisabledWithDevice;

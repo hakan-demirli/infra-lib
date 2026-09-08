@@ -1,0 +1,97 @@
+--- ami_amc_control.c
++++ ami_amc_control.c
+@@ -6,6 +6,7 @@
+  */
+ 
+ #include <linux/kthread.h>
++#include <linux/moduleparam.h>
+ #include <linux/delay.h>
+ #include <linux/device.h>
+ #include <linux/types.h>
+@@ -25,6 +26,13 @@
+ /*****************************************************************************/
+ 
+ static DEFINE_XARRAY_ALLOC(cid_xarray);
++static bool heartbeat_enabled;
++static bool logging_enabled;
++
++module_param_named(heartbeat, heartbeat_enabled, bool, 0444);
++MODULE_PARM_DESC(heartbeat, "Enable periodic AMC heartbeat requests");
++module_param_named(logging, logging_enabled, bool, 0444);
++MODULE_PARM_DESC(logging, "Enable continuous AMC firmware log polling");
+ 
+ 
+ /*****************************************************************************/
+@@ -1761,40 +1769,43 @@ int setup_amc(struct pci_dev *dev, struct amc_control_ctxt **amc_ctrl_ctxt,
+ 	 * including the heartbeat and logging threads.
+ 	 */
+ 	if (!(*amc_ctrl_ctxt)->compat_mode) {
+-		/* Spawn the heartbeat thread once version is verified */
+ 		(*amc_ctrl_ctxt)->event_cb = event_cb;
+ 		(*amc_ctrl_ctxt)->event_cb_data = event_cb_data;
+-		(*amc_ctrl_ctxt)->heartbeat_thread = kthread_create(
+-			heartbeat_health_thread,
+-			*amc_ctrl_ctxt,
+-			amc_hb_thread_name
+-		);
+ 
+-		if (IS_ERR((*amc_ctrl_ctxt)->heartbeat_thread)) {
+-			DEV_ERR(dev, "Unable to create the %s thread", amc_hb_thread_name);
+-			ret = PTR_ERR((*amc_ctrl_ctxt)->heartbeat_thread);
+-			goto fail;
+-		} else {
+-			DEV_VDBG(dev, "Successfully created %s hearbeat thread", amc_hb_thread_name);
+-			(*amc_ctrl_ctxt)->heartbeat_thread_created = true;
+-			wake_up_process((*amc_ctrl_ctxt)->heartbeat_thread);
++		if (heartbeat_enabled) {
++			(*amc_ctrl_ctxt)->heartbeat_thread = kthread_create(
++				heartbeat_health_thread,
++				*amc_ctrl_ctxt,
++				amc_hb_thread_name
++			);
++
++			if (IS_ERR((*amc_ctrl_ctxt)->heartbeat_thread)) {
++				DEV_ERR(dev, "Unable to create the %s thread", amc_hb_thread_name);
++				ret = PTR_ERR((*amc_ctrl_ctxt)->heartbeat_thread);
++				goto fail;
++			} else {
++				DEV_VDBG(dev, "Successfully created %s hearbeat thread", amc_hb_thread_name);
++				(*amc_ctrl_ctxt)->heartbeat_thread_created = true;
++				wake_up_process((*amc_ctrl_ctxt)->heartbeat_thread);
++			}
+ 		}
+ 
+-		/* Spawn logging thread. */
+-		(*amc_ctrl_ctxt)->logging_thread = kthread_create(
+-			logging_thread,
+-			*amc_ctrl_ctxt,
+-			amc_log_thread_name
+-		);
+-
+-		if (IS_ERR((*amc_ctrl_ctxt)->logging_thread)) {
+-			DEV_ERR(dev, "Unable to create the %s thread", amc_log_thread_name);
+-			ret = PTR_ERR((*amc_ctrl_ctxt)->logging_thread);
+-			goto fail;
+-		} else {
+-			DEV_VDBG(dev, "Successfully created %s thread", amc_log_thread_name);
+-			(*amc_ctrl_ctxt)->logging_thread_created = true;
+-			wake_up_process((*amc_ctrl_ctxt)->logging_thread);
++		if (logging_enabled) {
++			(*amc_ctrl_ctxt)->logging_thread = kthread_create(
++				logging_thread,
++				*amc_ctrl_ctxt,
++				amc_log_thread_name
++			);
++
++			if (IS_ERR((*amc_ctrl_ctxt)->logging_thread)) {
++				DEV_ERR(dev, "Unable to create the %s thread", amc_log_thread_name);
++				ret = PTR_ERR((*amc_ctrl_ctxt)->logging_thread);
++				goto fail;
++			} else {
++				DEV_VDBG(dev, "Successfully created %s thread", amc_log_thread_name);
++				(*amc_ctrl_ctxt)->logging_thread_created = true;
++				wake_up_process((*amc_ctrl_ctxt)->logging_thread);
++			}
+ 		}
+ 	}
+ 
