@@ -1,0 +1,15 @@
+--- ami_top.c
++++ ami_top.c
+@@ -306,2 +306,3 @@
+-	strncpy(pf_dev->cdev.drv_cls_str, driver_dev.drv_cls_str,
+-			strlen(driver_dev.drv_cls_str));
++	strscpy(pf_dev->cdev.drv_cls_str,
++		 driver_dev.drv_cls_str,
++		 sizeof(pf_dev->cdev.drv_cls_str));
+--- ami_cdev.c
++++ ami_cdev.c
+@@ -721 +721,3 @@
+-	strncpy(drv_cdev->drv_cls_str, (const char*)DEFAULT_CLS_NAME, CLS_STR_SIZE);
++	strscpy(drv_cdev->drv_cls_str,
++		 DEFAULT_CLS_NAME,
++		 sizeof(drv_cdev->drv_cls_str));

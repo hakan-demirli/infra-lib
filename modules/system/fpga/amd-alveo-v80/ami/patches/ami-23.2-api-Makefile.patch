@@ -1,0 +1,11 @@
+--- api/Makefile	2026-05-11 15:52:15.905662902 +0200
++++ /tmp/ami-23.2-userspace-patched/api/Makefile	2026-05-09 15:03:21.420797443 +0200
+@@ -23,7 +23,7 @@
+ 
+ # The -MMD and -MP flags together generate Makefiles for us.
+ # These files will have .d instead of .o as the output.
+-CFLAGS := $(INC_FLAGS) -MMD -MP -Wall -Werror
++CFLAGS := $(INC_FLAGS) -MMD -MP -Wall
+ 
+ #
+ # Default make

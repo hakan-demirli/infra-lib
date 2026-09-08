@@ -1,0 +1,20 @@
+--- ami_program.c	2026-05-11 15:52:15.913109976 +0200
++++ /tmp/ami-23.2-patched/ami_program.c	2026-05-09 15:02:42.028682559 +0200
+@@ -89,7 +89,7 @@
+ 				break;
+ 
+ 			if (efd_ctx)
+-				eventfd_signal(efd_ctx, bytes_to_write);
++				eventfd_signal(efd_ctx);
+ 		} else {
+ 			uint32_t boot_tag = INVALID_BOOT_TAG;
+ 
+@@ -143,7 +143,7 @@
+ 			buf, (PDI_CHUNK_SIZE * PDI_CHUNK_MULTIPLIER));
+ 
+ 		if (!ret && efd_ctx)
+-			eventfd_signal(efd_ctx, (PDI_CHUNK_SIZE * PDI_CHUNK_MULTIPLIER));
++			eventfd_signal(efd_ctx);
+ 	}
+ 
+ 	if (ret)

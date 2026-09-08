@@ -1,0 +1,9 @@
+--- ami_hwmon.c	2026-05-11 15:52:15.912109982 +0200
++++ /tmp/ami-23.2-patched/ami_hwmon.c	2026-05-09 15:02:18.101801175 +0200
+@@ -1419,6 +1419,4 @@
+ {
+ 	if (!dev)
+ 		return;
+-
+-	devm_hwmon_device_unregister(dev);
+ }

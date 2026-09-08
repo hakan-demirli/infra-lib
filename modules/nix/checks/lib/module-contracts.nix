@@ -37,6 +37,28 @@ let
   bluetooth = evalModule "/modules/system/bluetooth.nix" { };
   bluetoothSleepState = bluetooth.systemd.services.bluetooth-sleep-state;
   bluetoothStateTool = lib.removeSuffix " save" bluetoothSleepState.serviceConfig.ExecStart;
+  fpga = evalModule "/modules/system/fpga" {
+    hardware.fpga = {
+      enable = true;
+      devices.v80 = {
+        kind = "amd-alveo-v80";
+        pciAddress = "0000:01:00.0";
+        parentPciAddress = "0000:00:01.1";
+      };
+    };
+  };
+  fpgaGuard = fpga.systemd.services.fpga-v80-power-guard;
+  fpgaAmi = fpga.systemd.services.fpga-v80-ami;
+  fpgaEnabledWithoutDevices = evalModule "/modules/system/fpga" {
+    hardware.fpga.enable = true;
+  };
+  fpgaDisabledWithDevice = evalModule "/modules/system/fpga" {
+    hardware.fpga.devices.v80 = {
+      kind = "amd-alveo-v80";
+      pciAddress = "0000:01:00.0";
+      parentPciAddress = "0000:00:01.1";
+    };
+  };
   tailscaleAuth = evalModule "/modules/services/tailscale.nix" {
     imports = [ inputs.sops-nix.nixosModules.sops ];
     networking.useHostResolvConf = lib.mkForce false;
@@ -83,6 +105,22 @@ let
       && bluetoothSleepState.serviceConfig.Type == "oneshot"
       && bluetoothSleepState.serviceConfig.RemainAfterExit
       && bluetoothSleepState.serviceConfig.RuntimeDirectoryMode == "0700";
+    fpga-requires-explicit-selection =
+      fpga.hardware.fpga.enable
+      && fpga.hardware.fpga.devices.v80.kind == "amd-alveo-v80"
+      && lib.elem "ami" fpga.boot.blacklistedKernelModules
+      && lib.any (package: lib.getName package == "ami") fpga.boot.extraModulePackages;
+    fpga-guards-power-before-module-load =
+      lib.elem "systemd-modules-load.service" fpgaGuard.before
+      && lib.elem "fpga-v80-power-guard.service" fpga.systemd.services.systemd-modules-load.after
+      && lib.elem "fpga-v80-power-guard.service" fpgaAmi.after
+      && lib.hasInfix "0000:00:01.1" fpgaGuard.script
+      && lib.hasInfix "0000:01:00.0" fpgaGuard.script
+      && lib.hasInfix "0001000b" fpgaAmi.script
+      && lib.hasInfix "modprobe ami" fpgaAmi.script
+      && lib.hasInfix ''KERNEL=="0000:01:00.0"'' fpga.services.udev.extraRules;
+    fpga-rejects-enabled-without-devices = hasFailure "must be true exactly" fpgaEnabledWithoutDevices;
+    fpga-rejects-disabled-with-device = hasFailure "must be true exactly" fpgaDisabledWithDevice;
     tailscale-auth-key-stays-file-backed =
       tailscaleAuth.services.tailscale.extraUpFlags == [
         "--reset"

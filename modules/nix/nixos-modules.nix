@@ -33,6 +33,7 @@ _: {
     system-gnupg = ../system/gnupg.nix;
     system-locale = ../system/locale.nix;
     system-v4l2loopback = ../system/v4l2loopback.nix;
+    system-fpga = ../system/fpga;
 
     ops-kexec = ../ops/kexec.nix;
   };

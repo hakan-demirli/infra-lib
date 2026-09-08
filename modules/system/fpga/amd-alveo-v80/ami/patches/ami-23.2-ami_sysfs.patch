@@ -1,0 +1,10 @@
+--- ami_sysfs.c	2026-05-11 15:52:15.913109976 +0200
++++ /tmp/ami-23.2-patched/ami_sysfs.c	2026-05-09 15:01:14.308157141 +0200
+@@ -7,6 +7,7 @@
+ 
+ #include <linux/device.h>
+ #include <linux/kernel.h>
++#include <linux/vmalloc.h>
+ 
+ #include "ami.h"
+ #include "ami_top.h"

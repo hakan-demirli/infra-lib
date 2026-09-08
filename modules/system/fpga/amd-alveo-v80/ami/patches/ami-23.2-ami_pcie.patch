@@ -1,0 +1,32 @@
+--- ami_pcie.c
++++ ami_pcie.c
+@@ -518,6 +518,8 @@ int read_pcie_ext_capabilities(struct pci_dev *dev, pcie_ext_cap_struct **ext_ca
+ 	uint32_t ext_header_read_buf = 0;
+ 	uint16_t ext_cap_ptr = PCIE_EXT_CAP_BASE_ADDR;
+ 	pcie_ext_header_struct current_ext_header = { 0 };
++	int iterations = 0;
++	const int max_ext_cap_walk = 256;
+ 
+ 	if (!dev || !ext_cap)
+ 		return -EINVAL;
+@@ -827,6 +829,20 @@ int read_pcie_ext_capabilities(struct pci_dev *dev, pcie_ext_cap_struct **ext_ca
+ 			break;
+ 		}
+ 
++		if (current_ext_header.id == 0xFFFF) {
++			DEV_ERR(dev, "Invalid extended capability header at 0x%X",
++				ext_cap_ptr);
++			ret = -EIO;
++			goto fail;
++		}
++
++		if (++iterations > max_ext_cap_walk) {
++			DEV_ERR(dev, "Extended capability walk exceeded %d entries",
++				max_ext_cap_walk);
++			ret = -EIO;
++			goto fail;
++		}
++
+ 		ext_cap_ptr = current_ext_header.next;
+ 	} while(ext_cap_ptr != 0x000);
+ 

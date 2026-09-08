@@ -1,0 +1,35 @@
+--- cmd_handlers/cmd_cfgmem_program.c	2026-05-12 16:00:00.000000000 +0200
++++ /tmp/ami-23.2-userspace-patched/cmd_handlers/cmd_cfgmem_program.c	2026-05-12 17:00:00.000000000 +0200
+@@ -30,6 +30,16 @@
+ /* Defines                                                                   */
+ /*****************************************************************************/
+ #define PROGRESS_BAR_WIDTH (100)
++
++/*
++ * Bytes represented by one PDI download progress event.
++ *
++ * On Linux 6.8+, eventfd_signal() takes no count argument and always
++ * increments the eventfd counter by 1. The driver therefore signals one
++ * event per submitted GCQ download chunk. The chunk byte size is the
++ * driver's PDI_CHUNK_SIZE * PDI_CHUNK_MULTIPLIER = 32 * 1024.
++ */
++#define PROGRESS_EVENT_BYTES (32u * 1024u)
+ 
+ /*****************************************************************************/
+ /* Function declarations                                                     */
+@@ -115,8 +125,13 @@
+ 
+ 	prog = (struct ami_pdi_progress*)data;
+ 
+-	if (status == AMI_EVENT_STATUS_OK)
+-		prog->bytes_written += ctr;
++	if (status == AMI_EVENT_STATUS_OK) {
++		/* ctr is the number of events accumulated since last read; */
++		/* each event is one PDI chunk. Scale to bytes for display. */
++		prog->bytes_written += ctr * PROGRESS_EVENT_BYTES;
++		if (prog->bytes_written > prog->bytes_to_write)
++			prog->bytes_written = prog->bytes_to_write;
++	}
+ 
+ 	prog->reserved = print_progress_bar(
+ 		prog->bytes_written,

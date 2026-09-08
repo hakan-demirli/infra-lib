@@ -1,0 +1,22 @@
+--- Makefile	2026-05-11 15:52:15.911554277 +0200
++++ /tmp/ami-23.2-patched/Makefile	2026-05-09 15:00:35.422474078 +0200
+@@ -25,16 +25,10 @@
+ $(TARGET_MODULE)-objs += gcq-driver/src/gcq_hw.o
+ $(TARGET_MODULE)-objs += gcq-driver/src/gcq_features.o
+ 
+-EXTRA_CFLAGS:=-I$(PWD) -I$(PWD)/fal -I$(PWD)/fal/gcq -I$(PWD)/gcq-driver/src
++ccflags-y := -I$(src) -I$(src)/fal -I$(src)/fal/gcq -I$(src)/gcq-driver/src
++ccflags-y += -DDEBUG -DVERBOSE_DEBUG -DGCQ_MAX_INSTANCES=16
+ 
+-KERNEL_DIR = /lib/modules/`uname -r`/build
+-
+-#CFLAGS_file_name will apply the macros to those files
+-# CFLAGS_versal_vmc.o:=-DDEBUG
+-
+-#To apply the macro to all the source files compiled with this makefile
+-# ccflags-y:=-DDEBUG
+-ccflags-y:=-DDEBUG -DVERBOSE_DEBUG -DGCQ_MAX_INSTANCES=16
++KERNEL_DIR ?= /lib/modules/$(shell uname -r)/build
+ 
+ all: clean
+ 	$(MAKE) -C ${KERNEL_DIR} M=${PWD} modules

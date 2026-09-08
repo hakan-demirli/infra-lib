@@ -1,0 +1,11 @@
+--- app/Makefile	2026-05-11 15:52:15.907244812 +0200
++++ /tmp/ami-23.2-userspace-patched/app/Makefile	2026-05-09 15:03:21.420906670 +0200
+@@ -20,7 +20,7 @@
+ AMI_LIB_DIR := ../api/build
+ AMI_LIB := ami
+ 
+-CFLAGS := $(INC_FLAGS) -Wall -Werror
++CFLAGS := $(INC_FLAGS) -Wall
+ LDFLAGS := -L$(AMI_LIB_DIR) -l$(AMI_LIB) -lm -lpthread
+ 
+ #
