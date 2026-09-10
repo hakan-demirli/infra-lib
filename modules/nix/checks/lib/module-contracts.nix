@@ -136,6 +136,7 @@ let
       && lib.elem "fpga-v80-power-guard.service" fpga.systemd.services.systemd-modules-load.after
       && lib.elem "fpga-v80-power-guard.service" fpgaAmi.after
       && lib.hasInfix "0000:00:01.1" fpgaGuard.script
+      && lib.hasInfix "reset_method" fpgaGuard.script
       && lib.hasInfix "0000:01:00.0" fpgaGuard.script
       && lib.hasInfix "0001000b" fpgaAmi.script
       && lib.hasInfix "already_ready" fpgaAmi.script

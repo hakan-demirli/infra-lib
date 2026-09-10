@@ -77,6 +77,12 @@ in
               printf 'on\n' > "$device/power/control"
             fi
           done
+          for bdf in ${lib.escapeShellArgs (map (device: device.pciAddress) devices)}; do
+            reset_method="/sys/bus/pci/devices/$bdf/reset_method"
+            if [[ -w "$reset_method" ]]; then
+              printf '\n' > "$reset_method"
+            fi
+          done
         '';
       };
 
