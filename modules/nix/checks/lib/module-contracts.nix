@@ -139,7 +139,7 @@ let
       && lib.hasInfix "0000:01:00.0" fpgaGuard.script
       && lib.hasInfix "0001000b" fpgaAmi.script
       && lib.hasInfix "already_ready" fpgaAmi.script
-      && lib.hasInfix "stable_samples == 10" fpgaAmi.script
+      && lib.hasInfix "valid_samples == 10" fpgaAmi.script
       && lib.hasInfix "modprobe ami" fpgaAmi.script
       && lib.hasInfix "dev_state" fpgaAmi.script
       && lib.hasInfix ''KERNEL=="0000:01:00.0"'' fpga.services.udev.extraRules;

@@ -1,0 +1,384 @@
+From 6dbd59e1f7c5e69ab57d0c2ea012186d01630f48 Mon Sep 17 00:00:00 2001
+From: hakan-demirli <ehdemirli@proton.me>
+Date: Wed, 9 Sep 2026 23:07:01 +0200
+Subject: [PATCH 01/16] fix: reject inaccessible GCQ MMIO
+
+---
+ driver/fal/gcq/fw_if_gcq.h         |   1 +
+ driver/fal/gcq/fw_if_gcq_linux.c   |   1 +
+ driver/gcq-driver/src/gcq.h        |   1 +
+ driver/gcq-driver/src/gcq_driver.c | 105 +++++++++++++++++++++--------
+ driver/gcq-driver/src/gcq_ring.h   |  55 ++++++++++-----
+ 5 files changed, 121 insertions(+), 42 deletions(-)
+
+diff --git a/driver/fal/gcq/fw_if_gcq.h b/driver/fal/gcq/fw_if_gcq.h
+index 7209dee..a4c6c66 100644
+--- a/driver/fal/gcq/fw_if_gcq.h
++++ b/driver/fal/gcq/fw_if_gcq.h
+@@ -89,6 +89,7 @@ typedef enum _FW_IF_GCQ_ERRORS_TYPE
+     FW_IF_GCQ_ERRORS_DRIVER_CONSUMER_NOT_AVAILABLE,
+     FW_IF_GCQ_ERRORS_DRIVER_CONSUMER_NO_DATA_RECEIVED,
+     FW_IF_GCQ_ERRORS_DRIVER_PRODUCER_NO_FREE_SLOTS,
++    FW_IF_GCQ_ERRORS_DRIVER_DEVICE_UNAVAILABLE,
+ 
+     MAX_FW_IF_GCQ_ERROR
+ 
+diff --git a/driver/fal/gcq/fw_if_gcq_linux.c b/driver/fal/gcq/fw_if_gcq_linux.c
+index 7bfea69..416ab12 100644
+--- a/driver/fal/gcq/fw_if_gcq_linux.c
++++ b/driver/fal/gcq/fw_if_gcq_linux.c
+@@ -170,6 +170,7 @@ static FW_IF_GCQ_ERRORS_TYPE prvxMapIFDriverReturnCode( GCQ_ERRORS_TYPE xError )
+         case GCQ_ERRORS_CONSUMER_NOT_AVAILABLE:     xMappedErr = FW_IF_GCQ_ERRORS_DRIVER_CONSUMER_NOT_AVAILABLE; break;
+         case GCQ_ERRORS_CONSUMER_NO_DATA_RECEIVED:  xMappedErr = FW_IF_GCQ_ERRORS_DRIVER_CONSUMER_NO_DATA_RECEIVED; break;
+         case GCQ_ERRORS_PRODUCER_NO_FREE_SLOTS:     xMappedErr = FW_IF_GCQ_ERRORS_DRIVER_PRODUCER_NO_FREE_SLOTS; break;
++        case GCQ_ERRORS_DEVICE_UNAVAILABLE:         xMappedErr = FW_IF_GCQ_ERRORS_DRIVER_DEVICE_UNAVAILABLE; break;
+         case MAX_GCQ_ERRORS_TYPE:
+         default:
+             gcq_assert( 0 );
+diff --git a/driver/gcq-driver/src/gcq.h b/driver/gcq-driver/src/gcq.h
+index 8165cfb..32ebac0 100644
+--- a/driver/gcq-driver/src/gcq.h
++++ b/driver/gcq-driver/src/gcq.h
+@@ -152,6 +152,7 @@ typedef enum GCQ_ERRORS_TYPE
+     GCQ_ERRORS_CONSUMER_NOT_AVAILABLE,
+     GCQ_ERRORS_CONSUMER_NO_DATA_RECEIVED,
+     GCQ_ERRORS_PRODUCER_NO_FREE_SLOTS,
++    GCQ_ERRORS_DEVICE_UNAVAILABLE,
+ 
+     MAX_GCQ_ERRORS_TYPE
+ 
+diff --git a/driver/gcq-driver/src/gcq_driver.c b/driver/gcq-driver/src/gcq_driver.c
+index f827e85..f7e268b 100644
+--- a/driver/gcq-driver/src/gcq_driver.c
++++ b/driver/gcq-driver/src/gcq_driver.c
+@@ -24,7 +24,7 @@
+ #define GCQ_INSTANCE_LOWER_FIREWALL     ( 0xDEADFACE )
+ 
+ #define CHECK_ATTACHED( f )             ( ( GCQ_MODE_TYPE_CONSUMER_MODE == f->xMode ) && ( GCQ_FALSE == pxThis->ucConsumerAttached ) )
+-#define CHECK_FIREWALLS( f )            ( ( f->ulUpperFirewall != GCQ_INSTANCE_UPPER_FIREWALL ) && \
++#define CHECK_FIREWALLS( f )            ( ( f->ulUpperFirewall != GCQ_INSTANCE_UPPER_FIREWALL ) || \
+                                           ( f->ulLowerFirewall != GCQ_INSTANCE_LOWER_FIREWALL ) )
+ 
+ #define CHECK_32BIT_ALIGNMENT( x )      ( 0 == ( x & 0x3 ) )
+@@ -119,16 +119,29 @@ static inline uint32_t prvulGCQAllocNumSlots( uint64_t ullRingLen,
+  * @param   pxGCQInstance the gcq driver instance
+  * @param   pxRing the sq or cq ring buffer
+  *
+- * @return  N/A
++ * @return  GCQ_TRUE when both pointers were read
+  * 
+  */
+-static inline void prvvGCQFastForward( const GCQ_INSTANCE_TYPE *pxGCQInstance, struct GCQ_RING_TYPE *pxRing )
++static inline uint32_t prvucGCQFastForward( const GCQ_INSTANCE_TYPE *pxGCQInstance, struct GCQ_RING_TYPE *pxRing )
+ {
+     gcq_assert( pxGCQInstance );
+     gcq_assert( pxRing );
+ 
+-    prvvGCQRingReadProduced( pxGCQInstance->pxGCQIOAccess, pxGCQInstance->xGCQFlags, pxRing );
+-    prvvGCQRingReadConsumed( pxGCQInstance->pxGCQIOAccess, pxGCQInstance->xGCQFlags, pxRing );
++    return prvucGCQRingReadProduced( pxGCQInstance->pxGCQIOAccess, pxGCQInstance->xGCQFlags, pxRing ) &&
++           prvucGCQRingReadConsumed( pxGCQInstance->pxGCQIOAccess, pxGCQInstance->xGCQFlags, pxRing );
++}
++
++static inline uint32_t prvucGCQRegistersAvailable( const GCQ_INSTANCE_TYPE *pxGCQInstance )
++{
++    uint32_t ulSqTailPointer = pxGCQInstance->pxGCQIOAccess->xGCQReadReg32(
++        pxGCQInstance->ullBaseAddr + GCQ_PRODUCER_SQ_TAIL_POINTER
++    );
++    uint32_t ulCqTailPointer = pxGCQInstance->pxGCQIOAccess->xGCQReadReg32(
++        pxGCQInstance->ullBaseAddr + GCQ_PRODUCER_CQ_TAIL_POINTER
++    );
++
++    return ( ( uint32_t )-1 != ulSqTailPointer ) &&
++           ( ( uint32_t )-1 != ulCqTailPointer );
+ }
+ 
+ /**
+@@ -145,7 +158,7 @@ static inline uint32_t prvucGCQCanProduce( const GCQ_INSTANCE_TYPE *pxGCQInstanc
+ {
+     uint32_t ulStatus = GCQ_FALSE;
+ 
+-    if( ( GCQ_FALSE == CHECK_NULL( pxGCQInstance ) ) || 
++    if( ( GCQ_FALSE == CHECK_NULL( pxGCQInstance ) ) &&
+         ( GCQ_FALSE == CHECK_NULL( pxRing ) ) )
+     {
+         if( GCQ_FALSE == likely( prvucGCQRingIsFull( pxRing ) ) )
+@@ -154,8 +167,10 @@ static inline uint32_t prvucGCQCanProduce( const GCQ_INSTANCE_TYPE *pxGCQInstanc
+         }
+         else
+         {
+-            prvvGCQRingReadConsumed( pxGCQInstance->pxGCQIOAccess, pxGCQInstance->xGCQFlags, pxRing );
+-            ulStatus = ( GCQ_FALSE == prvucGCQRingIsFull( pxRing ) );
++            if( prvucGCQRingReadConsumed( pxGCQInstance->pxGCQIOAccess, pxGCQInstance->xGCQFlags, pxRing ) )
++            {
++                ulStatus = ( GCQ_FALSE == prvucGCQRingIsFull( pxRing ) );
++            }
+         }
+     }
+ 
+@@ -176,7 +191,7 @@ static inline uint32_t prvucGCQCanConsume( const GCQ_INSTANCE_TYPE *pxGCQInstanc
+ {
+     uint32_t ulStatus = GCQ_FALSE;
+ 
+-    if( ( GCQ_FALSE == CHECK_NULL( pxGCQInstance ) ) || 
++    if( ( GCQ_FALSE == CHECK_NULL( pxGCQInstance ) ) &&
+         ( GCQ_FALSE == CHECK_NULL( pxRing ) ) )
+     {
+         /* Check for errors */
+@@ -188,7 +203,7 @@ static inline uint32_t prvucGCQCanConsume( const GCQ_INSTANCE_TYPE *pxGCQInstanc
+             pxGCQInstance->ullBaseAddr + GCQ_PRODUCER_CQ_TAIL_POINTER
+         );
+ 
+-        if ( unlikely( ( ( uint32_t )-1 == ulSqTailPointer ) && ( ( uint32_t )-1 == ulCqTailPointer ) ) )
++        if ( unlikely( ( ( uint32_t )-1 == ulSqTailPointer ) || ( ( uint32_t )-1 == ulCqTailPointer ) ) )
+         {
+             ulStatus = GCQ_FALSE;
+         }
+@@ -198,8 +213,10 @@ static inline uint32_t prvucGCQCanConsume( const GCQ_INSTANCE_TYPE *pxGCQInstanc
+         }
+         else
+         {
+-            prvvGCQRingReadProduced( pxGCQInstance->pxGCQIOAccess, pxGCQInstance->xGCQFlags, pxRing );
+-            ulStatus = ( GCQ_FALSE == prvucGCQRingIsEmpty( pxRing ) );
++            if( prvucGCQRingReadProduced( pxGCQInstance->pxGCQIOAccess, pxGCQInstance->xGCQFlags, pxRing ) )
++            {
++                ulStatus = ( GCQ_FALSE == prvucGCQRingIsEmpty( pxRing ) );
++            }
+         }
+     }
+ 
+@@ -222,9 +239,11 @@ static inline void prvvGCQSoftReset( const GCQ_INSTANCE_TYPE *pxGCQInstance, str
+     gcq_assert( pxGCQInstance );
+     gcq_assert( pxRing );
+ 
+-    prvvGCQRingReadProduced( pxGCQInstance->pxGCQIOAccess, pxGCQInstance->xGCQFlags, pxRing );
+-    pxRing->ulRingConsumed = pxRing->ulRingProduced;
+-    prvvGCQRingWriteConsumed( pxGCQInstance->pxGCQIOAccess, pxGCQInstance->xGCQFlags, pxRing );
++    if( prvucGCQRingReadProduced( pxGCQInstance->pxGCQIOAccess, pxGCQInstance->xGCQFlags, pxRing ) )
++    {
++        pxRing->ulRingConsumed = pxRing->ulRingProduced;
++        prvvGCQRingWriteConsumed( pxGCQInstance->pxGCQIOAccess, pxGCQInstance->xGCQFlags, pxRing );
++    }
+ }
+ 
+ /**
+@@ -255,8 +274,11 @@ static inline GCQ_ERRORS_TYPE prvxGCQProduce( GCQ_INSTANCE_TYPE *pxGCQInstance,
+         /* Bind into the correct ring buffer */
+         pxRing = pxGCQInstance->pxGCQProducer;
+ 
+-        /* Check if there is a free slot */
+-        if( GCQ_TRUE == likely( prvucGCQCanProduce( pxGCQInstance, pxRing ) ) )
++        if( GCQ_FALSE == prvucGCQRegistersAvailable( pxGCQInstance ) )
++        {
++            xStatus = GCQ_ERRORS_DEVICE_UNAVAILABLE;
++        }
++        else if( GCQ_TRUE == likely( prvucGCQCanProduce( pxGCQInstance, pxRing ) ) )
+         {
+             *ullSlotAddr = prvullGCQRingGetSlotPtrProduced( pxRing );
+             pxRing->ulRingProduced++;
+@@ -627,11 +649,24 @@ GCQ_ERRORS_TYPE xGCQAttachConsumer( struct GCQ_INSTANCE_TYPE *pxGCQInstance )
+ 
+         if( GCQ_ERRORS_NONE == xStatus )
+         {
+-            prvvGCQFastForward( pxGCQInstance, &pxGCQInstance->xGCQSq );
+-            prvvGCQFastForward( pxGCQInstance, &pxGCQInstance->xGCQCq );
+-
+-            /* Set flag to show now attached */
+-            pxThis->ucConsumerAttached = GCQ_TRUE;
++            if( ( GCQ_FALSE == prvucGCQRegistersAvailable( pxGCQInstance ) ) ||
++                ( GCQ_FALSE == prvucGCQFastForward( pxGCQInstance, &pxGCQInstance->xGCQSq ) ) ||
++                ( GCQ_FALSE == prvucGCQFastForward( pxGCQInstance, &pxGCQInstance->xGCQCq ) ) )
++            {
++                xStatus = GCQ_ERRORS_DEVICE_UNAVAILABLE;
++            }
++            else if( ( ( pxGCQInstance->xGCQSq.ulRingProduced - pxGCQInstance->xGCQSq.ulRingConsumed ) >
++                       pxGCQInstance->xGCQSq.ulRingSlotNum ) ||
++                     ( ( pxGCQInstance->xGCQCq.ulRingProduced - pxGCQInstance->xGCQCq.ulRingConsumed ) >
++                       pxGCQInstance->xGCQCq.ulRingSlotNum ) )
++            {
++                xStatus = GCQ_ERRORS_CONSUMER_NOT_AVAILABLE;
++            }
++            else
++            {
++                /* Set flag to show now attached */
++                pxThis->ucConsumerAttached = GCQ_TRUE;
++            }
+         }
+     }
+ 
+@@ -690,6 +725,7 @@ GCQ_ERRORS_TYPE xGCQConsumeData( struct GCQ_INSTANCE_TYPE *pxGCQInstance, uint8_
+         if( GCQ_ERRORS_NONE == xStatus )
+         {
+             int offset;
++            uint32_t ulAllOnes = GCQ_TRUE;
+             GCQ_DEBUG( "Read data from slot addr:0x%llx len:%ld\r\n", ullSlotAddr, ulDataLen );
+ 
+             /* Process the data & populate the return buffer */
+@@ -697,13 +733,25 @@ GCQ_ERRORS_TYPE xGCQConsumeData( struct GCQ_INSTANCE_TYPE *pxGCQInstance, uint8_
+             {
+                 *( uint32_t *)( pucData + offset ) = pxGCQInstance->pxGCQIOAccess->xGCQReadMem32( ullSlotAddr + offset );
+                 GCQ_DEBUG( "Read addr:0x%llx val:0x%lx\r\n", ullSlotAddr + offset, *( uint32_t* )( pucData + offset ) );
++                if( ( uint32_t )-1 != *( uint32_t* )( pucData + offset ) )
++                {
++                    ulAllOnes = GCQ_FALSE;
++                }
+             }
+ 
+-            /* Notify the peer the data has been consumed */
+-            prvvGCQRingWriteConsumed( pxGCQInstance->pxGCQIOAccess, pxGCQInstance->xGCQFlags, pxGCQInstance->pxGCQConsumer );
++            if( ulAllOnes )
++            {
++                pxGCQInstance->pxGCQConsumer->ulRingConsumed--;
++                xStatus = GCQ_ERRORS_DEVICE_UNAVAILABLE;
++            }
++            else
++            {
++                /* Notify the peer the data has been consumed */
++                prvvGCQRingWriteConsumed( pxGCQInstance->pxGCQIOAccess, pxGCQInstance->xGCQFlags, pxGCQInstance->pxGCQConsumer );
++            }
+ 
+ 
+-            if( ( GCQ_INTERRUPT_MODE_INTERRUPT_REG == pxGCQInstance->xIntMode ) )
++            if( ( GCQ_ERRORS_NONE == xStatus ) && ( GCQ_INTERRUPT_MODE_INTERRUPT_REG == pxGCQInstance->xIntMode ) )
+             {
+                 /* Once triggered the interrupt is cleared by reading the interrupt status field */
+                 xStatus = xGCQHWClearInterrupt( pxGCQInstance->xMode,
+@@ -771,9 +819,12 @@ GCQ_ERRORS_TYPE xGCQProduceData( struct GCQ_INSTANCE_TYPE *pxGCQInstance, uint8_
+                 GCQ_DEBUG( "Write addr:0x%llx val:0x%lx\r\n", ullSlotAddr + offset, *( uint32_t * )( pucData + offset ) );
+             }
+ 
+-            prvvGCQRingWriteProduced( pxGCQInstance->pxGCQIOAccess, pxGCQInstance->xGCQFlags, pxGCQInstance->pxGCQProducer );
++            if( GCQ_FALSE == prvucGCQRingWriteProduced( pxGCQInstance->pxGCQIOAccess, pxGCQInstance->xGCQFlags, pxGCQInstance->pxGCQProducer ) )
++            {
++                xStatus = GCQ_ERRORS_DEVICE_UNAVAILABLE;
++            }
+ 
+-            if( GCQ_INTERRUPT_MODE_INTERRUPT_REG == pxGCQInstance->xIntMode )
++            if( ( GCQ_ERRORS_NONE == xStatus ) && ( GCQ_INTERRUPT_MODE_INTERRUPT_REG == pxGCQInstance->xIntMode ) )
+             {
+                 xStatus = xGCQHWTriggerInterrupt( pxGCQInstance->xMode,
+                                                 pxGCQInstance->ullBaseAddr,
+diff --git a/driver/gcq-driver/src/gcq_ring.h b/driver/gcq-driver/src/gcq_ring.h
+index 604e1be..293aa30 100644
+--- a/driver/gcq-driver/src/gcq_ring.h
++++ b/driver/gcq-driver/src/gcq_ring.h
+@@ -103,7 +103,7 @@ static inline void prvvGCQInitRing( const struct GCQ_INSTANCE_TYPE *pxGCQInstanc
+     gcq_assert( pxGCQInstance );
+     gcq_assert( pxRing );
+ 
+-    pxRing->pxGCQInstance = ( struct GCQ_INSTANCE_TYPE* )&pxGCQInstance;
++    pxRing->pxGCQInstance = ( struct GCQ_INSTANCE_TYPE* )pxGCQInstance;
+     pxRing->ullRingProducedAddr = ullProducedAddr;
+     pxRing->ullRingConsumedAddr = ullConsumedAddr;
+     pxRing->ullRingSlotAddr = ullSlotAddr;
+@@ -200,25 +200,34 @@ static inline void prvvGCQCopyFromRing( const GCQ_IO_ACCESS_TYPE *pxGCQIOAccess,
+  * @param    xGCQFlags is the supported driver flags
+  * @param    pxRing is the ring buffer instance
+  *
+- * @return   N/A
++ * @return   1 if the pointer was read, otherwise 0
+  *
+  * @note     Supports double read and in memory feature flags
+  * 
+  */
+-static inline void prvvGCQRingReadProduced( const GCQ_IO_ACCESS_TYPE *pxGCQIOAccess, GCQ_FLAGS_TYPE xGCQFlags, struct GCQ_RING_TYPE *pxRing )
++static inline uint32_t prvucGCQRingReadProduced( const GCQ_IO_ACCESS_TYPE *pxGCQIOAccess, GCQ_FLAGS_TYPE xGCQFlags, struct GCQ_RING_TYPE *pxRing )
+ {
++    uint32_t ulValue = 0;
+     gcq_assert( pxGCQIOAccess );
+ 
+     if( unlikely( GCQ_FEATURES_NEED_DOUBLE_MEM_READ( xGCQFlags ) ) )
+     {
+-        pxRing->ulRingProduced = ulGCQFeaturesHandleDoubleRead32( pxGCQIOAccess, pxRing->ullRingProducedAddr );
++        ulValue = ulGCQFeaturesHandleDoubleRead32( pxGCQIOAccess, pxRing->ullRingProducedAddr );
+     }
+     else
+     {
+-        pxRing->ulRingProduced = ( GCQ_FEATURES_IS_IN_MEM_PTR( xGCQFlags ) ?
+-                                   pxGCQIOAccess->xGCQReadMem32( pxRing->ullRingProducedAddr ) :
+-                                   pxGCQIOAccess->xGCQReadReg32( pxRing->ullRingProducedAddr ) );
++        ulValue = ( GCQ_FEATURES_IS_IN_MEM_PTR( xGCQFlags ) ?
++                    pxGCQIOAccess->xGCQReadMem32( pxRing->ullRingProducedAddr ) :
++                    pxGCQIOAccess->xGCQReadReg32( pxRing->ullRingProducedAddr ) );
++    }
++
++    if( ( uint32_t )-1 == ulValue )
++    {
++        return 0;
+     }
++
++    pxRing->ulRingProduced = ulValue;
++    return 1;
+ }
+ 
+ /**
+@@ -229,18 +238,25 @@ static inline void prvvGCQRingReadProduced( const GCQ_IO_ACCESS_TYPE *pxGCQIOAcc
+  * @param    xGCQFlags is the supported driver flags
+  * @param    pxRing is the ring buffer instance
+  *
+- * @return   N/A
++ * @return   1 if the pointer write was visible, otherwise 0
+  *
+  * @note     Supports in memory feature flags
+  *
+  */
+-static inline void prvvGCQRingWriteProduced( const GCQ_IO_ACCESS_TYPE *pxGCQIOAccess, GCQ_FLAGS_TYPE xGCQFlags, const struct GCQ_RING_TYPE *pxRing )
++static inline uint32_t prvucGCQRingWriteProduced( const GCQ_IO_ACCESS_TYPE *pxGCQIOAccess, GCQ_FLAGS_TYPE xGCQFlags, const struct GCQ_RING_TYPE *pxRing )
+ {
++    uint32_t ulValue = 0;
+     gcq_assert( pxGCQIOAccess );
+     gcq_assert( pxRing );
+ 
+     ( GCQ_FEATURES_IS_IN_MEM_PTR( xGCQFlags ) ? pxGCQIOAccess->xGCQWriteMem32( pxRing->ullRingProducedAddr, pxRing->ulRingProduced ) :
+                                                 pxGCQIOAccess->xGCQWriteReg32( pxRing->ullRingProducedAddr, pxRing->ulRingProduced ) );
++
++    ulValue = ( GCQ_FEATURES_IS_IN_MEM_PTR( xGCQFlags ) ?
++                pxGCQIOAccess->xGCQReadMem32( pxRing->ullRingProducedAddr ) :
++                pxGCQIOAccess->xGCQReadReg32( pxRing->ullRingProducedAddr ) );
++
++    return ( ulValue == pxRing->ulRingProduced );
+ }
+ 
+ /**
+@@ -250,26 +266,35 @@ static inline void prvvGCQRingWriteProduced( const GCQ_IO_ACCESS_TYPE *pxGCQIOAc
+  * @param    pxGCQIOAccess is the bound in memory/register access functions
+  * @param    pxRing is the ring buffer instance
+  *
+- * @return   N/A
++ * @return   1 if the pointer was read, otherwise 0
+  *
+  * @note     Supports double read and in memory feature flags
+  * 
+  */
+-static inline void prvvGCQRingReadConsumed( const GCQ_IO_ACCESS_TYPE *pxGCQIOAccess, GCQ_FLAGS_TYPE xGCQFlags, struct GCQ_RING_TYPE *pxRing )
++static inline uint32_t prvucGCQRingReadConsumed( const GCQ_IO_ACCESS_TYPE *pxGCQIOAccess, GCQ_FLAGS_TYPE xGCQFlags, struct GCQ_RING_TYPE *pxRing )
+ {
++    uint32_t ulValue = 0;
+     gcq_assert( pxGCQIOAccess );
+     gcq_assert( pxRing );
+ 
+     if( unlikely( GCQ_FEATURES_NEED_DOUBLE_MEM_READ( xGCQFlags ) ) )
+     {
+-        pxRing->ulRingConsumed = ulGCQFeaturesHandleDoubleRead32( pxGCQIOAccess, pxRing->ullRingConsumedAddr );
++        ulValue = ulGCQFeaturesHandleDoubleRead32( pxGCQIOAccess, pxRing->ullRingConsumedAddr );
+     }
+     else
+     {
+-        pxRing->ulRingConsumed = ( GCQ_FEATURES_IS_IN_MEM_PTR( xGCQFlags ) ?
+-                                   pxGCQIOAccess->xGCQReadMem32( pxRing->ullRingConsumedAddr ) :
+-                                   pxGCQIOAccess->xGCQReadReg32( pxRing->ullRingConsumedAddr ) );
++        ulValue = ( GCQ_FEATURES_IS_IN_MEM_PTR( xGCQFlags ) ?
++                    pxGCQIOAccess->xGCQReadMem32( pxRing->ullRingConsumedAddr ) :
++                    pxGCQIOAccess->xGCQReadReg32( pxRing->ullRingConsumedAddr ) );
++    }
++
++    if( ( uint32_t )-1 == ulValue )
++    {
++        return 0;
+     }
++
++    pxRing->ulRingConsumed = ulValue;
++    return 1;
+ }
+ 
+ /**

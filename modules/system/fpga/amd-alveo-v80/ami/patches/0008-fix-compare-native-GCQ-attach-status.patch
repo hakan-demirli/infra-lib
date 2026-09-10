@@ -1,0 +1,22 @@
+From b07e7a24ba6d99d1adc7fb4093758826858ceec0 Mon Sep 17 00:00:00 2001
+From: hakan-demirli <ehdemirli@proton.me>
+Date: Wed, 9 Sep 2026 23:15:28 +0200
+Subject: [PATCH 08/16] fix: compare native GCQ attach status
+
+---
+ driver/fal/gcq/fw_if_gcq_linux.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/driver/fal/gcq/fw_if_gcq_linux.c b/driver/fal/gcq/fw_if_gcq_linux.c
+index 5b87708..1ac39b8 100644
+--- a/driver/fal/gcq/fw_if_gcq_linux.c
++++ b/driver/fal/gcq/fw_if_gcq_linux.c
+@@ -364,7 +364,7 @@ static uint32_t prvGCQOpen( void *pvFWIf )
+ 
+             /* Map return code */
+             xRet = prvxMapIFDriverReturnCode( xStatus );
+-            if( FW_IF_ERRORS_NONE != xRet )
++            if( GCQ_ERRORS_NONE != xStatus )
+             {
+                 if( CHECK_NOT_NULL( pxProfile->pxGCQInstance ) )
+                 {

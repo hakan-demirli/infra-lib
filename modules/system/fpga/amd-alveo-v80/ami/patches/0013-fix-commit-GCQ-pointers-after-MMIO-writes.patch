@@ -1,0 +1,172 @@
+From cc1d4d41d27f806e2ba75d63550f2364131c4f6f Mon Sep 17 00:00:00 2001
+From: hakan-demirli <ehdemirli@proton.me>
+Date: Thu, 10 Sep 2026 00:00:42 +0200
+Subject: [PATCH 13/16] fix: commit GCQ pointers after MMIO writes
+
+---
+ driver/gcq-driver/src/gcq_driver.c | 37 +++++++++++++++++++++++-------
+ driver/gcq-driver/src/gcq_ring.h   | 25 +++++++++++++-------
+ 2 files changed, 46 insertions(+), 16 deletions(-)
+
+diff --git a/driver/gcq-driver/src/gcq_driver.c b/driver/gcq-driver/src/gcq_driver.c
+index 36228d8..4abc7fc 100644
+--- a/driver/gcq-driver/src/gcq_driver.c
++++ b/driver/gcq-driver/src/gcq_driver.c
+@@ -239,8 +239,12 @@ static inline void prvvGCQSoftReset( const GCQ_INSTANCE_TYPE *pxGCQInstance, str
+ 
+     if( prvucGCQRingReadProduced( pxGCQInstance->pxGCQIOAccess, pxGCQInstance->xGCQFlags, pxRing ) )
+     {
+-        pxRing->ulRingConsumed = pxRing->ulRingProduced;
+-        prvvGCQRingWriteConsumed( pxGCQInstance->pxGCQIOAccess, pxGCQInstance->xGCQFlags, pxRing );
++        if( prvucGCQRingWriteConsumed( pxGCQInstance->pxGCQIOAccess,
++                                      pxGCQInstance->xGCQFlags, pxRing,
++                                      pxRing->ulRingProduced ) )
++        {
++            pxRing->ulRingConsumed = pxRing->ulRingProduced;
++        }
+     }
+ }
+ 
+@@ -279,7 +283,6 @@ static inline GCQ_ERRORS_TYPE prvxGCQProduce( GCQ_INSTANCE_TYPE *pxGCQInstance,
+         else if( GCQ_TRUE == likely( prvucGCQCanProduce( pxGCQInstance, pxRing ) ) )
+         {
+             *ullSlotAddr = prvullGCQRingGetSlotPtrProduced( pxRing );
+-            pxRing->ulRingProduced++;
+         }
+         else
+         {
+@@ -326,7 +329,6 @@ static inline GCQ_ERRORS_TYPE prvxGCQConsume( GCQ_INSTANCE_TYPE *pxGCQInstance,
+         else if( GCQ_TRUE == likely( prvucGCQCanConsume( pxGCQInstance, pxRing ) ) )
+         {
+             *ullSlotAddr = prvullGCQRingGetSlotPtrConsumed( pxRing );
+-            pxRing->ulRingConsumed++;
+         }
+         else
+         {
+@@ -730,6 +732,7 @@ GCQ_ERRORS_TYPE xGCQConsumeData( struct GCQ_INSTANCE_TYPE *pxGCQInstance, uint8_
+         {
+             int offset;
+             uint32_t ulAllOnes = GCQ_TRUE;
++            uint32_t ulConsumed = 0;
+             GCQ_DEBUG( "Read data from slot addr:0x%llx len:%ld\r\n", ullSlotAddr, ulDataLen );
+ 
+             /* Process the data & populate the return buffer */
+@@ -745,13 +748,23 @@ GCQ_ERRORS_TYPE xGCQConsumeData( struct GCQ_INSTANCE_TYPE *pxGCQInstance, uint8_
+ 
+             if( ulAllOnes )
+             {
+-                pxGCQInstance->pxGCQConsumer->ulRingConsumed--;
+                 xStatus = GCQ_ERRORS_DEVICE_UNAVAILABLE;
+             }
+             else
+             {
+-                /* Notify the peer the data has been consumed */
+-                prvvGCQRingWriteConsumed( pxGCQInstance->pxGCQIOAccess, pxGCQInstance->xGCQFlags, pxGCQInstance->pxGCQConsumer );
++                ulConsumed = pxGCQInstance->pxGCQConsumer->ulRingConsumed + 1;
++
++                if( prvucGCQRingWriteConsumed( pxGCQInstance->pxGCQIOAccess,
++                                              pxGCQInstance->xGCQFlags,
++                                              pxGCQInstance->pxGCQConsumer,
++                                              ulConsumed ) )
++                {
++                    pxGCQInstance->pxGCQConsumer->ulRingConsumed = ulConsumed;
++                }
++                else
++                {
++                    xStatus = GCQ_ERRORS_DEVICE_UNAVAILABLE;
++                }
+             }
+ 
+ 
+@@ -815,6 +828,7 @@ GCQ_ERRORS_TYPE xGCQProduceData( struct GCQ_INSTANCE_TYPE *pxGCQInstance, uint8_
+         if( GCQ_ERRORS_NONE == xStatus )
+         {
+             int offset = 0;
++            uint32_t ulProduced = pxGCQInstance->pxGCQProducer->ulRingProduced + 1;
+             GCQ_DEBUG( "Write data to slot addr:0x%llx len:%ld\r\n", ullSlotAddr, ulDataLen );
+ 
+             for( offset = 0; offset < ulDataLen; offset += 4 )
+@@ -823,7 +837,14 @@ GCQ_ERRORS_TYPE xGCQProduceData( struct GCQ_INSTANCE_TYPE *pxGCQInstance, uint8_
+                 GCQ_DEBUG( "Write addr:0x%llx val:0x%lx\r\n", ullSlotAddr + offset, *( uint32_t * )( pucData + offset ) );
+             }
+ 
+-            if( GCQ_FALSE == prvucGCQRingWriteProduced( pxGCQInstance->pxGCQIOAccess, pxGCQInstance->xGCQFlags, pxGCQInstance->pxGCQProducer ) )
++            if( prvucGCQRingWriteProduced( pxGCQInstance->pxGCQIOAccess,
++                                          pxGCQInstance->xGCQFlags,
++                                          pxGCQInstance->pxGCQProducer,
++                                          ulProduced ) )
++            {
++                pxGCQInstance->pxGCQProducer->ulRingProduced = ulProduced;
++            }
++            else
+             {
+                 xStatus = GCQ_ERRORS_DEVICE_UNAVAILABLE;
+             }
+diff --git a/driver/gcq-driver/src/gcq_ring.h b/driver/gcq-driver/src/gcq_ring.h
+index 293aa30..7800b86 100644
+--- a/driver/gcq-driver/src/gcq_ring.h
++++ b/driver/gcq-driver/src/gcq_ring.h
+@@ -237,26 +237,27 @@ static inline uint32_t prvucGCQRingReadProduced( const GCQ_IO_ACCESS_TYPE *pxGCQ
+  * @param    pxGCQIOAccess is the bound in memory/register access functions
+  * @param    xGCQFlags is the supported driver flags
+  * @param    pxRing is the ring buffer instance
++ * @param    ulProduced is the pointer value to publish
+  *
+  * @return   1 if the pointer write was visible, otherwise 0
+  *
+  * @note     Supports in memory feature flags
+  *
+  */
+-static inline uint32_t prvucGCQRingWriteProduced( const GCQ_IO_ACCESS_TYPE *pxGCQIOAccess, GCQ_FLAGS_TYPE xGCQFlags, const struct GCQ_RING_TYPE *pxRing )
++static inline uint32_t prvucGCQRingWriteProduced( const GCQ_IO_ACCESS_TYPE *pxGCQIOAccess, GCQ_FLAGS_TYPE xGCQFlags, const struct GCQ_RING_TYPE *pxRing, uint32_t ulProduced )
+ {
+     uint32_t ulValue = 0;
+     gcq_assert( pxGCQIOAccess );
+     gcq_assert( pxRing );
+ 
+-    ( GCQ_FEATURES_IS_IN_MEM_PTR( xGCQFlags ) ? pxGCQIOAccess->xGCQWriteMem32( pxRing->ullRingProducedAddr, pxRing->ulRingProduced ) :
+-                                                pxGCQIOAccess->xGCQWriteReg32( pxRing->ullRingProducedAddr, pxRing->ulRingProduced ) );
++    ( GCQ_FEATURES_IS_IN_MEM_PTR( xGCQFlags ) ? pxGCQIOAccess->xGCQWriteMem32( pxRing->ullRingProducedAddr, ulProduced ) :
++                                                pxGCQIOAccess->xGCQWriteReg32( pxRing->ullRingProducedAddr, ulProduced ) );
+ 
+     ulValue = ( GCQ_FEATURES_IS_IN_MEM_PTR( xGCQFlags ) ?
+                 pxGCQIOAccess->xGCQReadMem32( pxRing->ullRingProducedAddr ) :
+                 pxGCQIOAccess->xGCQReadReg32( pxRing->ullRingProducedAddr ) );
+ 
+-    return ( ulValue == pxRing->ulRingProduced );
++    return ( ulValue == ulProduced );
+ }
+ 
+ /**
+@@ -304,19 +305,27 @@ static inline uint32_t prvucGCQRingReadConsumed( const GCQ_IO_ACCESS_TYPE *pxGCQ
+  * @param    pxGCQIOAccess is the bound in memory/register access functions
+  * @param    xGCQFlags is the supported driver flags
+  * @param    pxRing is the ring buffer instance
++ * @param    ulConsumed is the pointer value to publish
+  *
+- * @return   N/A
++ * @return   1 if the pointer write was visible, otherwise 0
+  *
+  * @note     Supports in memory feature flags
+  * 
+  */
+-static inline void prvvGCQRingWriteConsumed( const GCQ_IO_ACCESS_TYPE *pxGCQIOAccess, GCQ_FLAGS_TYPE xGCQFlags, const struct GCQ_RING_TYPE *pxRing )
++static inline uint32_t prvucGCQRingWriteConsumed( const GCQ_IO_ACCESS_TYPE *pxGCQIOAccess, GCQ_FLAGS_TYPE xGCQFlags, const struct GCQ_RING_TYPE *pxRing, uint32_t ulConsumed )
+ {
++    uint32_t ulValue = 0;
+     gcq_assert( pxGCQIOAccess );
+     gcq_assert( pxRing );
+ 
+-    ( GCQ_FEATURES_IS_IN_MEM_PTR( xGCQFlags ) ? pxGCQIOAccess->xGCQWriteMem32( pxRing->ullRingConsumedAddr, pxRing->ulRingConsumed ) :
+-                                                pxGCQIOAccess->xGCQWriteReg32( pxRing->ullRingConsumedAddr, pxRing->ulRingConsumed ) );
++    ( GCQ_FEATURES_IS_IN_MEM_PTR( xGCQFlags ) ? pxGCQIOAccess->xGCQWriteMem32( pxRing->ullRingConsumedAddr, ulConsumed ) :
++                                                pxGCQIOAccess->xGCQWriteReg32( pxRing->ullRingConsumedAddr, ulConsumed ) );
++
++    ulValue = ( GCQ_FEATURES_IS_IN_MEM_PTR( xGCQFlags ) ?
++                pxGCQIOAccess->xGCQReadMem32( pxRing->ullRingConsumedAddr ) :
++                pxGCQIOAccess->xGCQReadReg32( pxRing->ullRingConsumedAddr ) );
++
++    return ( ulValue == ulConsumed );
+ }
+ 
+ /**

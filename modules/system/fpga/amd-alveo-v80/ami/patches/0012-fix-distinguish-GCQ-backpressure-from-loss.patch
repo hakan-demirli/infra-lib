@@ -1,0 +1,85 @@
+From 415464954ee9e2414124ffd9c4dcbc6b20e10c17 Mon Sep 17 00:00:00 2001
+From: hakan-demirli <ehdemirli@proton.me>
+Date: Wed, 9 Sep 2026 23:58:12 +0200
+Subject: [PATCH 12/16] fix: distinguish GCQ backpressure from loss
+
+---
+ driver/amc_proxy.c       | 10 ++++++++++
+ driver/amc_proxy.h       |  1 +
+ driver/ami_amc_control.c |  9 ++++-----
+ 3 files changed, 15 insertions(+), 5 deletions(-)
+
+diff --git a/driver/amc_proxy.c b/driver/amc_proxy.c
+index 411e6c6..bbd449d 100644
+--- a/driver/amc_proxy.c
++++ b/driver/amc_proxy.c
+@@ -763,6 +763,12 @@ static int complete_response_thread(void *data)
+ 							(uint8_t*)&ccmd,
+ 							&ccmd_size, 0);
+ 			if (ret == FW_IF_ERRORS_NONE) {
++				if (ccmd.hdr.cid > AMC_PROXY_MAX_COMMAND_IDS) {
++					PR_ERR("Invalid GCQ response cid %u", ccmd.hdr.cid);
++					amc_proxy_fail_submitted_cmds(amc_proxy_inst);
++					response_failed = true;
++					continue;
++				}
+                                 /*
+                                 * Get the entry from submitted_cmds list,
+                                 * remove and invoke callback
+@@ -842,6 +848,10 @@ static int amc_proxy_submit_request(struct amc_proxy_instance *inst,
+ 
+         if (ret != FW_IF_ERRORS_NONE) {
+                 PR_ERR("FW_IF write request failed: %d", ret);
++		if (ret == FW_IF_GCQ_ERRORS_DRIVER_PRODUCER_NO_FREE_SLOTS)
++			return -EBUSY;
++		if (ret == FW_IF_GCQ_ERRORS_DRIVER_DEVICE_UNAVAILABLE)
++			return -ENODEV;
+                 return -EIO;
+         }
+ 
+diff --git a/driver/amc_proxy.h b/driver/amc_proxy.h
+index 8b51ba5..8183b26 100644
+--- a/driver/amc_proxy.h
++++ b/driver/amc_proxy.h
+@@ -21,6 +21,7 @@
+ /*****************************************************************************/
+ #define AMC_PROXY_REQUEST_SIZE	        (512)
+ #define AMC_PROXY_RESPONSE_SIZE	        (16)
++#define AMC_PROXY_MAX_COMMAND_IDS       (255)
+ 
+ 
+ /*****************************************************************************/
+diff --git a/driver/ami_amc_control.c b/driver/ami_amc_control.c
+index 6d3b268..0a1942c 100644
+--- a/driver/ami_amc_control.c
++++ b/driver/ami_amc_control.c
+@@ -40,8 +40,6 @@ MODULE_PARM_DESC(logging, "Enable continuous AMC firmware log polling");
+ /* Defines                                                                   */
+ /*****************************************************************************/
+ 
+-#define MAX_COMMAND_IDS    		        (255)
+-
+ #define DEVICE_READY_SLEEP_INTERVAL		(100)
+ #define DEVICE_READY_RETRY_COUNT		(5)
+ #define REQUEST_MSQ_TIMEOUT			(msecs_to_jiffies(30000))   /* 30 seconds */
+@@ -397,7 +395,7 @@ static int get_gcq_cid(struct amc_control_ctxt *amc_ctrl_ctxt, uint16_t *id)
+          * If we support 16 cards each with a heartbeat msg, one other
+          * synchronous message per card then 32 Id's would be enough.
+          */
+-        struct xa_limit limit = XA_LIMIT(0, MAX_COMMAND_IDS);
++        struct xa_limit limit = XA_LIMIT(0, AMC_PROXY_MAX_COMMAND_IDS);
+ 	if (!amc_ctrl_ctxt || !id)
+                 return -EINVAL;
+ 
+@@ -1570,8 +1568,9 @@ int submit_gcq_command(struct amc_control_ctxt *amc_ctrl_ctxt, enum gcq_submit_c
+         mutex_unlock(&amc_ctrl_ctxt->gcq_cmd_lock);
+ 
+ 	if (ret) {
+-		AMI_ERR(amc_ctrl_ctxt, "Failed to submit command, stopping GCQ");
+-		stop_gcq_services(amc_ctrl_ctxt);
++		AMI_ERR(amc_ctrl_ctxt, "Failed to submit command: %d", ret);
++		if (ret != -EBUSY)
++			stop_gcq_services(amc_ctrl_ctxt);
+ 		goto done;
+ 	}
+ 

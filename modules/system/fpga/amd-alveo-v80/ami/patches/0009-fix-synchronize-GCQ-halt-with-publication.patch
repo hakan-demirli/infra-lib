@@ -1,0 +1,55 @@
+From d920bcc70667fe206362a77b6a8413570698804f Mon Sep 17 00:00:00 2001
+From: hakan-demirli <ehdemirli@proton.me>
+Date: Wed, 9 Sep 2026 23:51:22 +0200
+Subject: [PATCH 09/16] fix: synchronize GCQ halt with publication
+
+---
+ driver/ami_amc_control.c | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/driver/ami_amc_control.c b/driver/ami_amc_control.c
+index c393e43..e3cb4c5 100644
+--- a/driver/ami_amc_control.c
++++ b/driver/ami_amc_control.c
+@@ -1159,11 +1159,14 @@ int submit_gcq_command(struct amc_control_ctxt *amc_ctrl_ctxt, enum gcq_submit_c
+ 		return -EINVAL;
+ 
+ 
++	mutex_lock(&amc_ctrl_ctxt->lock);
+ 	if (amc_ctrl_ctxt->gcq_halted) {
++		mutex_unlock(&amc_ctrl_ctxt->lock);
+ 		AMI_ERR(amc_ctrl_ctxt, "Service is halted");
+ 		ret = -EIO;
+ 		goto done;
+ 	}
++	mutex_unlock(&amc_ctrl_ctxt->lock);
+ 
+ 	cmd_id = get_cmd_command_id(cmd_req);
+ 	if (cmd_id == AMC_CMD_ID_UNKNOWN) {
+@@ -1398,6 +1401,14 @@ int submit_gcq_command(struct amc_control_ctxt *amc_ctrl_ctxt, enum gcq_submit_c
+ 
+         /* Multiple thread now generating gcq command requests, protect concurrent access */
+         mutex_lock(&amc_ctrl_ctxt->gcq_cmd_lock);
++	mutex_lock(&amc_ctrl_ctxt->lock);
++	if (amc_ctrl_ctxt->gcq_halted) {
++		mutex_unlock(&amc_ctrl_ctxt->lock);
++		mutex_unlock(&amc_ctrl_ctxt->gcq_cmd_lock);
++		ret = -EIO;
++		goto done;
++	}
++	mutex_unlock(&amc_ctrl_ctxt->lock);
+ 
+ 	switch(cmd_id) {
+ 	case AMC_CMD_ID_IDENTIFY:
+@@ -1644,9 +1655,11 @@ void stop_gcq_services(struct amc_control_ctxt *amc_ctrl_ctxt)
+                 AMI_VDBG(amc_ctrl_ctxt, "Attempting stopping gcq services...");
+ 
+                 /* stop receiving incoming commands */
++		mutex_lock(&amc_ctrl_ctxt->gcq_cmd_lock);
+                 mutex_lock(&(amc_ctrl_ctxt->lock));
+                 amc_ctrl_ctxt->gcq_halted = true;
+                 mutex_unlock(&(amc_ctrl_ctxt->lock));
++		mutex_unlock(&amc_ctrl_ctxt->gcq_cmd_lock);
+ 
+                 AMI_VDBG(amc_ctrl_ctxt, "AMC services are stopped...");
+         }

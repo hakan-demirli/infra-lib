@@ -1,0 +1,71 @@
+From c1ab038f867afc3eec8410737e4a361a4c8aa098 Mon Sep 17 00:00:00 2001
+From: hakan-demirli <ehdemirli@proton.me>
+Date: Wed, 9 Sep 2026 23:14:24 +0200
+Subject: [PATCH 07/16] fix: stop AMI before disabling PCI
+
+---
+ driver/ami_top.c | 40 +++++++++++++++++++++++-----------------
+ 1 file changed, 23 insertions(+), 17 deletions(-)
+
+diff --git a/driver/ami_top.c b/driver/ami_top.c
+index bfb9f31..24ba0a9 100644
+--- a/driver/ami_top.c
++++ b/driver/ami_top.c
+@@ -372,6 +372,9 @@ int pcie_device_probe(struct pci_dev *dev, const struct pci_device_id *id)
+ 		return -EINVAL;
+ 	}
+ 
++	/* The V80 requires its vendor reset sequence, not a generic bus reset. */
++	dev->dev_flags |= PCI_DEV_FLAGS_NO_BUS_RESET;
++
+ 	DEV_VDBG(dev, "Probing PCIE device (vendor id : 0x%X, device id : 0x%X)",
+ 		dev->vendor, dev->device);
+ 
+@@ -480,27 +483,30 @@ void pcie_device_remove(struct pci_dev *dev)
+ 	
+ 	pf_dev = pci_get_drvdata(dev);
+ 
+-	if (pf_dev) {
+-		mutex_lock(&pf_dev_lock);
+-		/*
+-		 * We can access pf_dev directly because we have a
+-		 * reference from the probe function - we will set the device
+-		 * to disabled to prevent any further reference increases and also release
+-		 * our own reference. The device data will only be deleted when the
+-		 * refcount reaches 0.
+-		 */
+-		pf_dev->enabled = false;
+-		mutex_unlock(&pf_dev_lock);
+-		put_pf_dev_entry(pf_dev);
+-	}
++	if (!pf_dev)
++		return;
++
++	mutex_lock(&pf_dev_lock);
++	/*
++	 * We can access pf_dev directly because we have a
++	 * reference from the probe function - we will set the device
++	 * to disabled to prevent any further reference increases and also release
++	 * our own reference. The device data will only be deleted when the
++	 * refcount reaches 0.
++	 */
++	pf_dev->enabled = false;
++	mutex_unlock(&pf_dev_lock);
++
++	kill_pf_dev_apps(pf_dev, SIGBUS);  /* Kill any applications that may still be running */
++	put_pf_dev_entry(pf_dev);
++	down(&pf_dev->remove_sema);  /* Wait until the refcount reaches 0 */
++	delete_pf_dev_data(pf_dev, false);  /* Safe to delete data */
+ 
+ 	pcie_capability_clear_word(dev, PCI_EXP_DEVCTL,
+ 		PCI_EXP_DEVCTL_CERE | PCI_EXP_DEVCTL_NFERE |
+ 		PCI_EXP_DEVCTL_FERE | PCI_EXP_DEVCTL_URRE);
+-	pci_disable_device(dev);  /* Disable bus mastering regardless of the refcount */
+-	kill_pf_dev_apps(pf_dev, SIGBUS);  /* Kill any applications that may still be running */
+-	down_interruptible(&pf_dev->remove_sema);  /* Wait until the refcount reaches 0 */
+-	delete_pf_dev_data(pf_dev, false);  /* Safe to delete data */
++	pci_clear_master(dev);
++	pci_disable_device(dev);
+ 	DEV_INFO(dev, "Successfully removed PCIe device");
+ }
+ 

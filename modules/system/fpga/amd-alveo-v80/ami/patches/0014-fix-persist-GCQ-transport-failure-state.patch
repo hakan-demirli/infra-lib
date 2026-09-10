@@ -1,0 +1,55 @@
+From b5f4bc51d4a1c64f27d4222b4f7ed0c3f677ca5c Mon Sep 17 00:00:00 2001
+From: hakan-demirli <ehdemirli@proton.me>
+Date: Thu, 10 Sep 2026 00:02:25 +0200
+Subject: [PATCH 14/16] fix: persist GCQ transport failure state
+
+---
+ driver/amc_proxy.c | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/driver/amc_proxy.c b/driver/amc_proxy.c
+index bbd449d..29c756c 100644
+--- a/driver/amc_proxy.c
++++ b/driver/amc_proxy.c
+@@ -445,6 +445,7 @@ struct amc_proxy_cmd_response {
+  * @response_thread_created: flag used to determine if thread has been created
+  * @submitted_cmds: internal list of submitted commands
+  * @initialised: flag to indicate layer has been init
++ * @transport_failed: flag indicating that GCQ MMIO is unavailable
+  */
+ struct amc_proxy_instance {
+         FW_IF_CFG                       *fw_if_handle;
+@@ -455,6 +456,7 @@ struct amc_proxy_instance {
+         bool                            response_thread_created;
+         struct list_head                submitted_cmds;
+         bool                            initialised;
++        bool                            transport_failed;
+ };
+ 
+ /**
+@@ -717,6 +719,7 @@ static void amc_proxy_fail_submitted_cmds(struct amc_proxy_instance *inst)
+ 	struct list_head *pos = NULL, *next = NULL;
+ 
+ 	mutex_lock(&inst->lock);
++	inst->transport_failed = true;
+ 	list_for_each_safe(pos, next, &inst->submitted_cmds) {
+ 		cmd = list_entry(pos, struct amc_proxy_cmd_struct, cmd_list);
+ 		list_del_init(pos);
+@@ -837,12 +840,16 @@ static int amc_proxy_submit_request(struct amc_proxy_instance *inst,
+                 return -EINVAL;
+ 
+         mutex_lock(&inst->lock);
+-        if (inst->initialised) {
++        if (inst->initialised && !inst->transport_failed) {
+                 ret = inst->fw_if_handle->write(inst->fw_if_handle, 0,
+                                                 (uint8_t *)request,
+                                                 sizeof(*request), 0);
+                 if (ret == FW_IF_ERRORS_NONE)
+                         list_add_tail(&cmd->cmd_list, &inst->submitted_cmds);
++                else if (ret == FW_IF_GCQ_ERRORS_DRIVER_DEVICE_UNAVAILABLE)
++                        inst->transport_failed = true;
++        } else if (inst->transport_failed) {
++                ret = FW_IF_GCQ_ERRORS_DRIVER_DEVICE_UNAVAILABLE;
+         }
+         mutex_unlock(&inst->lock);
+ 

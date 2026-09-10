@@ -1,0 +1,98 @@
+From 3777586dfefd7ff4710d008f7886c42177bcd9b0 Mon Sep 17 00:00:00 2001
+From: hakan-demirli <ehdemirli@proton.me>
+Date: Thu, 10 Sep 2026 21:36:06 +0200
+Subject: [PATCH] fix: verify hot reset and wait for reprobe
+
+---
+ api/src/ami_device.c | 41 ++++++++++++++++++++++++++++++++++++++---
+ 1 file changed, 38 insertions(+), 3 deletions(-)
+
+diff --git a/api/src/ami_device.c b/api/src/ami_device.c
+index cda49f9..754fa92 100644
+--- a/api/src/ami_device.c
++++ b/api/src/ami_device.c
+@@ -61,6 +61,7 @@
+ /* For PCI reloading */
+ #define HOT_RESET_GPIO_BAR		(0)
+ #define HOT_RESET_GPIO_OFFSET		(0x1040000)
++#define HOT_RESET_GPIO_CLEAR		(0)
+ #define PCI_ENABLE			(1)
+ /*
+  * NOTE: The following delays may need tweaking.
+@@ -68,8 +69,10 @@
+  * if improper delays are used!
+  */
+ #define HOT_RESET_SBR_SET_DELAY_MS	(2)
+-#define HOT_RESET_RESCAN_DELAY_MS	(4000)
++#define HOT_RESET_RESCAN_DELAY_MS	(5000)
+ #define HOT_RESET_GPIO_SET_DELAY_MS	(1)
++#define HOT_RESET_HANDLE_RETRY_MS	(1000)
++#define HOT_RESET_HANDLE_RETRY_COUNT	(30)
+ 
+ #define PCI_DEV_DIR			"/sys/bus/pci/devices/0000:%02x:%02x.%1x"
+ #define PCI_BRIDGE_CONTROL		(0x3e)
+@@ -205,6 +208,8 @@ static int get_new_device_handle(ami_device **new_dev, uint16_t bdf, bool with_s
+ 		/* Check if we need to setup sensors. */
+ 		if (!with_sensors || ((ret = ami_sensor_discover(dev)) == AMI_STATUS_OK))
+ 			*new_dev = dev;
++		else
++			ami_dev_delete(&dev);
+ 	}
+ 
+ 	return ret;
+@@ -704,6 +709,8 @@ int ami_dev_hot_reset(ami_device **dev)
+ 	int config = AMI_INVALID_FD;
+ 	char port[AMI_DEV_PCI_PORT_SIZE] = { 0 };
+ 	uint16_t bridge_ctl = 0;
++	uint32_t gpio_state = 0;
++	int attempt = 0;
+ 
+ 	/* Store data so we can restore the handle later. */
+ 	uint16_t bdf = 0;
+@@ -738,6 +745,20 @@ int ami_dev_hot_reset(ami_device **dev)
+ 	if (ret)
+ 		goto close_config;
+ 
++	ret = ami_mem_bar_read(
++		*dev, HOT_RESET_GPIO_BAR, HOT_RESET_GPIO_OFFSET, &gpio_state
++	);
++	if (ret)
++		goto clear_gpio;
++	if (gpio_state != PCI_ENABLE) {
++		ret = AMI_API_ERROR_M(
++			AMI_ERROR_EIO,
++			"hot reset GPIO readback 0x%x",
++			gpio_state
++		);
++		goto clear_gpio;
++	}
++
+ 	/* Remove device */
+ 	has_sensors = ((*dev)->sensors != NULL);
+ 	bdf = (*dev)->bdf;
+@@ -836,9 +857,23 @@ int ami_dev_hot_reset(ami_device **dev)
+ 
+ 	/* Rescan bus */
+ 	ret = pci_rescan();
++	if (ret)
++		return ret;
++
++	/* Update handle after the reloaded PDI and AMI probe are ready. */
++	for (attempt = 0; attempt < HOT_RESET_HANDLE_RETRY_COUNT; attempt++) {
++		ret = get_new_device_handle(dev, bdf, has_sensors);
++		if (ret == AMI_STATUS_OK)
++			return ret;
++		ami_msleep(HOT_RESET_HANDLE_RETRY_MS);
++	}
+ 
+-	/* Update handle */
+-	return get_new_device_handle(dev, bdf, has_sensors);
++	return ret;
++
++clear_gpio:
++	ami_mem_bar_write(
++		*dev, HOT_RESET_GPIO_BAR, HOT_RESET_GPIO_OFFSET, HOT_RESET_GPIO_CLEAR
++	);
+ 
+ close_config:
+ 	close(config);

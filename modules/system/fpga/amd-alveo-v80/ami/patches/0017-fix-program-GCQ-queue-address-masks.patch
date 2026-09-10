@@ -1,0 +1,37 @@
+From 421e13136bdd2c2648a9026a990c5b7548d360ae Mon Sep 17 00:00:00 2001
+From: hakan-demirli <ehdemirli@proton.me>
+Date: Thu, 10 Sep 2026 21:25:47 +0200
+Subject: [PATCH 17/18] fix: program GCQ queue address masks
+
+---
+ driver/gcq-driver/src/gcq_hw.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/driver/gcq-driver/src/gcq_hw.c b/driver/gcq-driver/src/gcq_hw.c
+index 7815930..15666f9 100644
+--- a/driver/gcq-driver/src/gcq_hw.c
++++ b/driver/gcq-driver/src/gcq_hw.c
+@@ -50,9 +50,9 @@ GCQ_ERRORS_TYPE xGCQHWInit( GCQ_MODE_TYPE xMode,
+                 /*
+                  * In consumer mode we don't perform a soft reset and the HW is owned by the producer
+                  */
+-                ulValue = FIELD_SET( GCQ_CONSUMER_CQ_QUEUE_MEM_ADDR_LOW, GCQ_HW_LOWER_32( ullRingAddr ) );
++                ulValue = FIELD_SET( GCQ_CONSUMER_CQ_QUEUE_MEM_ADDR_LOW_MASK, GCQ_HW_LOWER_32( ullRingAddr ) );
+                 pxGCQIOAccess->xGCQWriteReg32( ( ullBaseAddr + GCQ_CONSUMER_CQ_QUEUE_MEM_ADDR_LOW ), ulValue );
+-                ulValue = FIELD_SET( GCQ_CONSUMER_CQ_QUEUE_MEM_ADDR_HIGH, GCQ_HW_UPPER_32 ( ullRingAddr ) );
++                ulValue = FIELD_SET( GCQ_CONSUMER_CQ_QUEUE_MEM_ADDR_HIGH_MASK, GCQ_HW_UPPER_32 ( ullRingAddr ) );
+                 pxGCQIOAccess->xGCQWriteReg32( ( ullBaseAddr + GCQ_CONSUMER_CQ_QUEUE_MEM_ADDR_HIGH ), ulValue );
+                 break;
+ 
+@@ -64,9 +64,9 @@ GCQ_ERRORS_TYPE xGCQHWInit( GCQ_MODE_TYPE xMode,
+                 ulValue = pxGCQIOAccess->xGCQReadReg32( ( ullBaseAddr + GCQ_PRODUCER_SQ_RESET_INTERRUPT_CTRL ) );
+                 ulValue |= FIELD_SET( GCQ_PRODUCER_SQ_RESET_INTERRUPT_CTRL_RESET_MASK, GCQ_INTERRUPT_CTRL_RESET );
+                 pxGCQIOAccess->xGCQWriteReg32( ( ullBaseAddr + GCQ_PRODUCER_SQ_RESET_INTERRUPT_CTRL ), ulValue );
+-                ulValue = FIELD_SET( GCQ_PRODUCER_SQ_QUEUE_MEM_ADDR_LOW, GCQ_HW_LOWER_32 ( ullRingAddr ) );
++                ulValue = FIELD_SET( GCQ_PRODUCER_SQ_QUEUE_MEM_ADDR_LOW_MASK, GCQ_HW_LOWER_32 ( ullRingAddr ) );
+                 pxGCQIOAccess->xGCQWriteReg32( ( ullBaseAddr + GCQ_PRODUCER_SQ_QUEUE_MEM_ADDR_LOW ), ulValue );
+-                ulValue = FIELD_SET( GCQ_PRODUCER_SQ_QUEUE_MEM_ADDR_HIGH, GCQ_HW_UPPER_32 ( ullRingAddr ) );
++                ulValue = FIELD_SET( GCQ_PRODUCER_SQ_QUEUE_MEM_ADDR_HIGH_MASK, GCQ_HW_UPPER_32 ( ullRingAddr ) );
+                 pxGCQIOAccess->xGCQWriteReg32( ( ullBaseAddr + GCQ_PRODUCER_SQ_QUEUE_MEM_ADDR_HIGH ), ulValue );
+                 break;
+ 

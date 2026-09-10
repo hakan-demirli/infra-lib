@@ -1,0 +1,24 @@
+From d7568a7b9c3dc956ed1ff334328120f00574f185 Mon Sep 17 00:00:00 2001
+From: hakan-demirli <ehdemirli@proton.me>
+Date: Thu, 10 Sep 2026 21:40:10 +0200
+Subject: [PATCH] fix: define GCQ bit masks without UINT32_MAX
+
+---
+ driver/gcq-driver/src/gcq_regmap.h | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/driver/gcq-driver/src/gcq_regmap.h b/driver/gcq-driver/src/gcq_regmap.h
+index 5cb78aa..247c556 100644
+--- a/driver/gcq-driver/src/gcq_regmap.h
++++ b/driver/gcq-driver/src/gcq_regmap.h
+@@ -75,8 +75,8 @@ static inline uint32_t prvulGetTrailingZeros( uint64_t ullValue )
+ #ifndef __KERNEL__
+ #define BIT( n )                                                ( 1ul << ( n ) )    /* BIT a macro already defined in include/linux/bitops.h */
+ #endif
+-#define BITS( h, l )                                            ( ( UINT32_MAX - ( 1U << (l) ) + 1 ) & \
+-                                                                ( UINT32_MAX >> ( BITS_PER_U32 - 1 - ( h ) ) ) )
++#define BITS( h, l )                                            ( ( ( ( uint32_t )-1 ) - ( 1U << (l) ) + 1 ) & \
++                                                                ( ( ( uint32_t )-1 ) >> ( BITS_PER_U32 - 1 - ( h ) ) ) )
+ #define FIELD_SHIFT( mask )                                     ( prvulGetTrailingZeros( mask ) )
+ #define FIELD_SET( mask, val )                                  ( ( ( val ) << FIELD_SHIFT( mask ) ) & ( mask ) )
+ #define FIELD_GET( mask, reg )                                  ( ( ( reg ) & ( mask ) ) >> FIELD_SHIFT( mask ) )

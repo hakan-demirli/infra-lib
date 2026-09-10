@@ -1,0 +1,113 @@
+From 48c6129a14f091532b2d6a51ee4df1e03d0872c3 Mon Sep 17 00:00:00 2001
+From: hakan-demirli <ehdemirli@proton.me>
+Date: Wed, 9 Sep 2026 23:09:31 +0200
+Subject: [PATCH 03/16] fix: make GCQ attach transactional
+
+---
+ driver/fal/gcq/fw_if_gcq_linux.c | 45 ++++++++++++++++++++++++++++++--
+ 1 file changed, 43 insertions(+), 2 deletions(-)
+
+diff --git a/driver/fal/gcq/fw_if_gcq_linux.c b/driver/fal/gcq/fw_if_gcq_linux.c
+index 416ab12..5b87708 100644
+--- a/driver/fal/gcq/fw_if_gcq_linux.c
++++ b/driver/fal/gcq/fw_if_gcq_linux.c
+@@ -13,10 +13,12 @@
+ /*****************************************************************************/
+ 
+ #ifdef __KERNEL__
++#include <linux/delay.h>
+ #include <asm/io.h>
+ #else
+ #include <string.h>
+ #include <assert.h>
++#include <unistd.h>
+ #endif
+ 
+ #include "fw_if_gcq.h"
+@@ -29,12 +31,20 @@
+ /*****************************************************************************/
+ 
+ #define FW_IF_GCQ_NAME                  "FW_IF_GCQ"
++#define GCQ_ATTACH_MAX_ATTEMPTS         ( 30 )
++#define GCQ_ATTACH_RETRY_TIMEOUT_MS     ( 1000 )
++
++#ifdef __KERNEL__
++#define GCQ_ATTACH_SLEEP_MS( ms )       msleep( ms )
++#else
++#define GCQ_ATTACH_SLEEP_MS( ms )       usleep( ( ms ) * 1000 )
++#endif
+ 
+ #define GCQ_UPPER_FIREWALL              ( 0xBEEFCAFE )
+ #define GCQ_LOWER_FIREWALL              ( 0xDEADFACE )
+ 
+ #define CHECK_DRIVER                    ( FW_IF_FALSE == iInitialised )
+-#define CHECK_FIREWALLS( f )            ( ( f->upperFirewall != GCQ_UPPER_FIREWALL ) &&\
++#define CHECK_FIREWALLS( f )            ( ( f->upperFirewall != GCQ_UPPER_FIREWALL ) ||\
+                                           ( f->lowerFirewall != GCQ_LOWER_FIREWALL ) )
+ #define CHECK_NULL( f )                 ( NULL == f )
+ #define CHECK_NOT_NULL( f )             ( NULL != f )
+@@ -306,6 +316,7 @@ static uint32_t prvGCQOpen( void *pvFWIf )
+         {
+             FW_IF_GCQ_PROFILE_TYPE *pxProfile = ( FW_IF_GCQ_PROFILE_TYPE* )pxCfg->pvProfile;
+             GCQ_ERRORS_TYPE xStatus = MAX_GCQ_ERRORS_TYPE;
++            int iAttempts = 0;
+             pxProfile->pxGCQInstance = NULL;
+ 
+             xStatus = xGCQInit( &pxProfile->pxGCQInstance,
+@@ -328,7 +339,21 @@ static uint32_t prvGCQOpen( void *pvFWIf )
+ 
+                 if( FW_IF_GCQ_MODE_CONSUMER == pxCfg->xMode )
+                 {
+-                    xStatus = xGCQAttachConsumer( pxProfile->pxGCQInstance );
++                    do
++                    {
++                        xStatus = xGCQAttachConsumer( pxProfile->pxGCQInstance );
++                        iAttempts++;
++                        if( ( GCQ_ERRORS_CONSUMER_NOT_AVAILABLE != xStatus ) &&
++                            ( GCQ_ERRORS_DEVICE_UNAVAILABLE != xStatus ) )
++                        {
++                            break;
++                        }
++                        if( iAttempts < GCQ_ATTACH_MAX_ATTEMPTS )
++                        {
++                            GCQ_ATTACH_SLEEP_MS( GCQ_ATTACH_RETRY_TIMEOUT_MS );
++                        }
++                    } while( iAttempts < GCQ_ATTACH_MAX_ATTEMPTS );
++
+                     if( GCQ_ERRORS_NONE == xStatus )
+                     {
+                         pxProfile->xState = FW_IF_GCQ_STATE_ATTACHED;
+@@ -339,10 +364,24 @@ static uint32_t prvGCQOpen( void *pvFWIf )
+ 
+             /* Map return code */
+             xRet = prvxMapIFDriverReturnCode( xStatus );
++            if( FW_IF_ERRORS_NONE != xRet )
++            {
++                if( CHECK_NOT_NULL( pxProfile->pxGCQInstance ) )
++                {
++                    xGCQDeinit( pxProfile->pxGCQInstance );
++                }
++                pxProfile->pxGCQInstance = NULL;
++                pxProfile->xState = FW_IF_GCQ_STATE_CLOSED;
++                pxCfg->pvProfile = NULL;
++                ulProfilesAllocated--;
++            }
+         }
+         else
+         {
+             xRet = FW_IF_GCQ_ERRORS_NOT_SUPPORTED;
++            pxGCQProfile->xState = FW_IF_GCQ_STATE_CLOSED;
++            pxCfg->pvProfile = NULL;
++            ulProfilesAllocated--;
+         }
+ 
+         return xRet;
+@@ -376,6 +415,8 @@ static uint32_t prvGCQClose( void *pvFWIf )
+         if( GCQ_ERRORS_NONE == xStatus )
+         {
+             pxProfile->xState = FW_IF_GCQ_STATE_CLOSED;
++            pxProfile->pxGCQInstance = NULL;
++            pxCfg->pvProfile = NULL;
+             ulProfilesAllocated--;
+         }
+         else

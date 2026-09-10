@@ -1,0 +1,30 @@
+From 66a957a8b52907a1036fb3005e30d80e68e19ed3 Mon Sep 17 00:00:00 2001
+From: hakan-demirli <ehdemirli@proton.me>
+Date: Thu, 10 Sep 2026 00:18:09 +0200
+Subject: [PATCH 15/16] fix: wait for stable AMC startup
+
+---
+ driver/ami_amc_control.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/driver/ami_amc_control.c b/driver/ami_amc_control.c
+index 0a1942c..f63078c 100644
+--- a/driver/ami_amc_control.c
++++ b/driver/ami_amc_control.c
+@@ -41,7 +41,7 @@ MODULE_PARM_DESC(logging, "Enable continuous AMC firmware log polling");
+ /*****************************************************************************/
+ 
+ #define DEVICE_READY_SLEEP_INTERVAL		(100)
+-#define DEVICE_READY_RETRY_COUNT		(5)
++#define DEVICE_READY_RETRY_COUNT		(300)
+ #define REQUEST_MSQ_TIMEOUT			(msecs_to_jiffies(30000))   /* 30 seconds */
+ /*
+  * Timeout for the PDI download can be small as we are packetising the
+@@ -268,6 +268,7 @@ bool gcq_device_is_ready(struct amc_control_ctxt *amc_ctrl_ctxt)
+ 			sizeof(shared_mem));
+ 		memcpy_fromio(&verification, amc_ctrl_ctxt->gcq_payload_base_virt_addr,
+ 			sizeof(verification));
++		verification.log_msg.log_msg_index = shared_mem.log_msg.log_msg_index;
+ 		if (memcmp(&shared_mem, &verification, sizeof(shared_mem)) ||
+ 			!amc_shared_mem_is_valid(amc_ctrl_ctxt, &shared_mem))
+ 			continue;

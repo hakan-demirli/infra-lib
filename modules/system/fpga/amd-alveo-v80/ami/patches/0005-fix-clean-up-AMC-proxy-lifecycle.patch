@@ -1,0 +1,187 @@
+From fb376789e37da12b3465431272c767879fe48f28 Mon Sep 17 00:00:00 2001
+From: hakan-demirli <ehdemirli@proton.me>
+Date: Wed, 9 Sep 2026 23:12:36 +0200
+Subject: [PATCH 05/16] fix: clean up AMC proxy lifecycle
+
+---
+ driver/amc_proxy.c | 115 ++++++++++++++++++++++-----------------------
+ 1 file changed, 57 insertions(+), 58 deletions(-)
+
+diff --git a/driver/amc_proxy.c b/driver/amc_proxy.c
+index d8325c2..0b1c4a2 100644
+--- a/driver/amc_proxy.c
++++ b/driver/amc_proxy.c
+@@ -627,9 +627,10 @@ static void amc_proxy_submitted_cmds_drain(struct amc_proxy_instance *inst)
+ 		if (time_before(cmd->cmd_timeout_jiffies, jiffies)) {
+ 
+                         /* Remove from list and invoke callback */
+-			list_del(pos);
++			list_del_init(pos);
+ 
+                         cmd->cmd_rcode = -ETIME;
++                        cmd->timed_out = true;
+                         PR_CRIT_WARN("cmd id: %d timed out(drain), hot reset is required", cmd->cmd_cid);
+ 
+                         if (inst->event_cb) {
+@@ -666,7 +667,7 @@ static void amc_proxy_remove_submitted_cmd(struct amc_proxy_instance *inst,
+ 
+ 		/* Finding the matching command and remove from list, don't invoke callback */
+ 		if (cmd == ccmd) {
+-			list_del(pos);
++			list_del_init(pos);
+                         cmd->cmd_rcode = -EIO;
+ 			PR_DBG("cmd id: %d removed", cmd->cmd_cid);
+ 		}
+@@ -696,8 +697,10 @@ static void amc_proxy_submitted_cmd_check_timeout(struct amc_proxy_instance *ins
+ 		/* Finding timed out cmds */
+                 if (time_before(cmd->cmd_timeout_jiffies, jiffies)) {
+ 
++                        list_del_init(pos);
+                         PR_CRIT_WARN("cmd id: %d timed out(timeout), hot reset is required", cmd->cmd_cid);
+                         cmd->cmd_rcode = -ETIME;
++                        cmd->timed_out = true;
+                         if (inst->event_cb) {
+                                 inst->event_cb(inst->proxy_id,
+                                                AMC_PROXY_EVENT_RESPONSE_TIMEOUT,
+@@ -834,59 +837,54 @@ static int amc_proxy_submit_request(struct amc_proxy_instance *inst,
+ int amc_proxy_init(uint8_t proxy_id, FW_IF_CFG *fw_if_handle)
+ {
+         int ret = 0;
++        int close_ret = 0;
++        const char *ap_thread_name = "amc proxy";
++        struct amc_proxy_list_entry *amc_proxy_entry = NULL;
+ 
+-        if (!fw_if_handle) {
++        if (!fw_if_handle)
+                return(-EINVAL);
+-        }
+ 
+         ret = fw_if_handle->open(fw_if_handle);
+-        if (ret == FW_IF_ERRORS_NONE) {
+-
+-                const char *ap_thread_name = "amc proxy";
+-                struct amc_proxy_list_entry *amc_proxy_entry = NULL;
+-                amc_proxy_entry = kzalloc(sizeof(struct amc_proxy_list_entry), GFP_KERNEL);
+-
+-                if (!amc_proxy_entry) {
+-                        PR_ERR("Unable to allocate memory for amc context");
+-                        return(-EINVAL);
+-                }
+-                amc_proxy_entry->inst.fw_if_handle = fw_if_handle;
+-                amc_proxy_entry->inst.proxy_id = proxy_id;
+-                amc_proxy_entry->inst.response_thread_created = false;
+-                
+-                mutex_init(&(amc_proxy_entry->inst.lock));
+-                INIT_LIST_HEAD(&(amc_proxy_entry->list));
+-                INIT_LIST_HEAD(&(amc_proxy_entry->inst.submitted_cmds));
+-
+-                /* Create thread to handle command responses */
+-                amc_proxy_entry->inst.response_thread = kthread_create(complete_response_thread,
+-                                                                       &amc_proxy_entry->inst,
+-                                                                       ap_thread_name);
+-	        if (IS_ERR(amc_proxy_entry->inst.response_thread)) {
+-		        PR_ERR("Unable to create the %s thread", ap_thread_name);
+-		        ret = PTR_ERR(amc_proxy_entry->inst.response_thread);
+-	        } else {
+-	                PR_INFO("Successfully created %s kernel thread", ap_thread_name);
+-                        amc_proxy_entry->inst.response_thread_created = true;
+-                }
+-
+-                if (!ret) {
+-
+-                        /* Add entry onto the global instance list */
+-                        list_add_tail(&amc_proxy_entry->list, &(amc_proxy_list_head));
++        if (ret != FW_IF_ERRORS_NONE) {
++                PR_ERR("FW_IF open request failed: %d", ret);
++                return -EIO;
++        }
+ 
+-                        /* Start response & heartbeat threads */
+-                        wake_up_process(amc_proxy_entry->inst.response_thread);
++        amc_proxy_entry = kzalloc(sizeof(*amc_proxy_entry), GFP_KERNEL);
++        if (!amc_proxy_entry) {
++                PR_ERR("Unable to allocate memory for amc context");
++                ret = -ENOMEM;
++                goto close_fw_if;
++        }
+ 
+-                        /* Set flag to indicate all initialisation has completed */
+-                        amc_proxy_entry->inst.initialised = true;
+-                }
++        amc_proxy_entry->inst.fw_if_handle = fw_if_handle;
++        amc_proxy_entry->inst.proxy_id = proxy_id;
++        mutex_init(&amc_proxy_entry->inst.lock);
++        INIT_LIST_HEAD(&amc_proxy_entry->list);
++        INIT_LIST_HEAD(&amc_proxy_entry->inst.submitted_cmds);
++
++        amc_proxy_entry->inst.response_thread = kthread_create(complete_response_thread,
++                                                               &amc_proxy_entry->inst,
++                                                               ap_thread_name);
++	if (IS_ERR(amc_proxy_entry->inst.response_thread)) {
++		PR_ERR("Unable to create the %s thread", ap_thread_name);
++		ret = PTR_ERR(amc_proxy_entry->inst.response_thread);
++                goto free_proxy;
++	}
+ 
+-        } else {
+-                PR_ERR("FW_IF open request failed: %d", ret);
+-                ret = -EIO;
+-        }
++	PR_INFO("Successfully created %s kernel thread", ap_thread_name);
++        amc_proxy_entry->inst.response_thread_created = true;
++        amc_proxy_entry->inst.initialised = true;
++        list_add_tail(&amc_proxy_entry->list, &amc_proxy_list_head);
++        wake_up_process(amc_proxy_entry->inst.response_thread);
++        return 0;
+ 
++free_proxy:
++        kfree(amc_proxy_entry);
++close_fw_if:
++        close_ret = fw_if_handle->close(fw_if_handle);
++        if (close_ret != FW_IF_ERRORS_NONE)
++                PR_ERR("FW_IF close request failed: %d", close_ret);
+         return ret;
+ }
+ 
+@@ -930,6 +928,10 @@ int amc_proxy_close(const FW_IF_CFG *fw_if_handle)
+ 
+                         if (amc_ctxt->inst.fw_if_handle == fw_if_handle) {
+ 
++                                mutex_lock(&amc_ctxt->inst.lock);
++                                amc_ctxt->inst.initialised = false;
++                                mutex_unlock(&amc_ctxt->inst.lock);
++
+                                 /*
+                                  * Drain the submitted command queue before killing
+                                  * the worker thread
+@@ -942,22 +944,19 @@ int amc_proxy_close(const FW_IF_CFG *fw_if_handle)
+                                 if(amc_ctxt->inst.response_thread_created == true)
+                                 {
+                                         ret = kthread_stop(amc_ctxt->inst.response_thread);
+-                                        if (!ret) {
+-                                                ret = amc_ctxt->inst.fw_if_handle->close(amc_ctxt->inst.fw_if_handle);
+-                                                if(ret) {
+-                                                        PR_ERR("FW_IF close request failed: %d", ret);
+-                                                        ret = -EIO;
+-                                                }
+-                                        } else {
++                                        if (ret)
+                                                 PR_ERR("kthread_stop() failed for thread: %d", ret);
+-                                        }
++                                }
++
++                                ret = amc_ctxt->inst.fw_if_handle->close(amc_ctxt->inst.fw_if_handle);
++                                if(ret) {
++                                        PR_ERR("FW_IF close request failed: %d", ret);
++                                        ret = -EIO;
+                                 }
+ 
+                                 /* Remove from list and free the memory */
+-                                list_del(&amc_ctxt->list);
++                                list_del_init(&amc_ctxt->list);
+                                 kfree(amc_ctxt);
+-
+-                                amc_ctxt->inst.initialised = false;
+                                 break;
+                         }
+                 }

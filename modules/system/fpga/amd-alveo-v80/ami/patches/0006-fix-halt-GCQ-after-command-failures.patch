@@ -1,0 +1,130 @@
+From 1a4166797cda5be279b71890a543fc8f36467041 Mon Sep 17 00:00:00 2001
+From: hakan-demirli <ehdemirli@proton.me>
+Date: Wed, 9 Sep 2026 23:13:34 +0200
+Subject: [PATCH 06/16] fix: halt GCQ after command failures
+
+---
+ driver/ami_amc_control.c | 29 ++++++++++++++++++++++-------
+ 1 file changed, 22 insertions(+), 7 deletions(-)
+
+diff --git a/driver/ami_amc_control.c b/driver/ami_amc_control.c
+index 28f2952..c393e43 100644
+--- a/driver/ami_amc_control.c
++++ b/driver/ami_amc_control.c
+@@ -217,7 +217,7 @@ bool gcq_device_is_ready(struct amc_control_ctxt *amc_ctrl_ctxt)
+ 	int i = 0, retry = DEVICE_READY_RETRY_COUNT, interval = DEVICE_READY_SLEEP_INTERVAL;
+ 
+ 	if (!amc_ctrl_ctxt)
+-		return -EINVAL;
++		return false;
+ 
+ 	for (i = 0; i < retry; i++) {
+ 		msleep(interval);
+@@ -257,6 +257,9 @@ bool gcq_device_is_ready(struct amc_control_ctxt *amc_ctrl_ctxt)
+ 		AMI_VDBG(amc_ctrl_ctxt, "Offset of data buffer ended                    : 0x%x",
+ 			amc_ctrl_ctxt->amc_shared_mem.data.amc_data_end);
+ 
++		if (amc_ctrl_ctxt->amc_shared_mem.amc_magic_no == (uint32_t)-1)
++			continue;
++
+ 		if (amc_ctrl_ctxt->amc_shared_mem.amc_magic_no == AMC_GCQ_MAGIC_NO) {
+ 
+ 			uint32_t amc_status = 0;
+@@ -419,8 +422,8 @@ static int amc_proxy_callback(uint8_t proxy_id, uint8_t event_id, void* arg)
+ 
+ 	case AMC_PROXY_EVENT_RESPONSE_TIMEOUT:
+ 		/* Signal condvar to unblock & fetch the failed response */
+-                complete(req_complete);
+ 		amc_proxy_cmd->timed_out = true;
++		complete(req_complete);
+ 		break;
+ 
+ 	default:
+@@ -1139,6 +1142,7 @@ int submit_gcq_command(struct amc_control_ctxt *amc_ctrl_ctxt, enum gcq_submit_c
+ {
+ 	int ret = SUCCESS;
+ 	enum amc_cmd_id cmd_id = AMC_CMD_ID_UNKNOWN;
++	bool cid_allocated = false;
+ 	bool log_page_acquired = false, data_page_acquired = false;
+ 	uint32_t length = 0;
+ 	enum amc_proxy_cmd_sensor_repo sid = AMC_PROXY_CMD_SENSOR_REPO_UNKNOWN;
+@@ -1209,6 +1213,7 @@ int submit_gcq_command(struct amc_control_ctxt *amc_ctrl_ctxt, enum gcq_submit_c
+ 		ret = -ENOMEM;
+ 		goto done;
+ 	}
++	INIT_LIST_HEAD(&amc_proxy_cmd->cmd_list);
+ 
+ 	/* Payload formation */
+ 	switch(cmd_id) {
+@@ -1373,6 +1378,7 @@ int submit_gcq_command(struct amc_control_ctxt *amc_ctrl_ctxt, enum gcq_submit_c
+ 		goto done;
+ 	}
+ 	amc_proxy_cmd->cmd_cid = cid;
++	cid_allocated = true;
+ 
+ 	/* Init condition variable */
+         if (cmd_id == AMC_CMD_ID_HEARTBEAT) {
+@@ -1498,17 +1504,25 @@ int submit_gcq_command(struct amc_control_ctxt *amc_ctrl_ctxt, enum gcq_submit_c
+ 
+         mutex_unlock(&amc_ctrl_ctxt->gcq_cmd_lock);
+ 
++	if (ret) {
++		AMI_ERR(amc_ctrl_ctxt, "Failed to submit command, stopping GCQ");
++		stop_gcq_services(amc_ctrl_ctxt);
++		goto done;
++	}
++
+ 	/* Wait for command completion */
+-        if (ret || wait_for_completion_killable(req_complete)) {
++        if (wait_for_completion_killable(req_complete)) {
+                 ret = -ERESTARTSYS;
+                 AMI_ERR(amc_ctrl_ctxt, "Submitted command killed, abort.");
+                 amc_proxy_request_abort(amc_proxy_cmd);
++		stop_gcq_services(amc_ctrl_ctxt);
+                 goto done;
+         }
+ 
+ 	if (amc_proxy_cmd->timed_out) {
+ 		AMI_ERR(amc_ctrl_ctxt, "Submitted command timed out");
+ 		amc_proxy_request_abort(amc_proxy_cmd);
++		stop_gcq_services(amc_ctrl_ctxt);
+ 		ret = -ETIMEDOUT;
+ 		goto done;
+ 	}
+@@ -1601,7 +1615,7 @@ int submit_gcq_command(struct amc_control_ctxt *amc_ctrl_ctxt, enum gcq_submit_c
+ 
+ done:
+ 
+-	if (amc_proxy_cmd)
++	if (cid_allocated)
+ 		remove_gcq_cid(amc_ctrl_ctxt, amc_proxy_cmd->cmd_cid);
+ 
+ 	if (log_page_acquired)
+@@ -1762,6 +1776,7 @@ int setup_amc(struct pci_dev *dev, struct amc_control_ctxt **amc_ctrl_ctxt,
+ 	}
+ 
+         vfree(version_buf);
++        version_buf = NULL;
+ 
+ 	/*
+ 	 * COMPAT MODE: heartbeat disabled, logging disabled.
+@@ -1844,6 +1859,9 @@ int unset_amc(struct pci_dev *dev, struct amc_control_ctxt **amc_ctrl_ctxt)
+ 
+ 	if (*amc_ctrl_ctxt) {
+ 
++		/* Block new commands before stopping any GCQ worker. */
++		stop_gcq_services(*amc_ctrl_ctxt);
++
+                 /* Stop the heartbeat thread if it's been created */
+                 if ((*amc_ctrl_ctxt)->heartbeat_thread_created == true)
+                 {
+@@ -1862,9 +1880,6 @@ int unset_amc(struct pci_dev *dev, struct amc_control_ctxt **amc_ctrl_ctxt)
+                         }
+                 }
+ 
+-		/* Stop the Services */
+-		stop_gcq_services(*amc_ctrl_ctxt);
+-
+ 		/* Close the proxy */
+ 		ret = amc_proxy_close(&((*amc_ctrl_ctxt)->fw_if_cfg));
+ 		if (ret)

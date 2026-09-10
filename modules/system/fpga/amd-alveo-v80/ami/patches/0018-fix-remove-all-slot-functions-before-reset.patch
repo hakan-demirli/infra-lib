@@ -1,0 +1,145 @@
+From 4a391f1ac6ce2d4777e05b02571333324bf3bb58 Mon Sep 17 00:00:00 2001
+From: hakan-demirli <ehdemirli@proton.me>
+Date: Thu, 10 Sep 2026 21:26:17 +0200
+Subject: [PATCH 18/18] fix: remove all slot functions before reset
+
+---
+ api/src/ami_device.c | 90 +++++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 88 insertions(+), 2 deletions(-)
+
+diff --git a/api/src/ami_device.c b/api/src/ami_device.c
+index 61f45c6..cda49f9 100644
+--- a/api/src/ami_device.c
++++ b/api/src/ami_device.c
+@@ -18,6 +18,7 @@
+ #include <string.h>
+ #include <errno.h>
+ #include <libgen.h>
++#include <dirent.h>
+ #include <sys/stat.h>
+ #include <sys/ioctl.h>
+ 
+@@ -78,6 +79,7 @@
+ #define SYSFS_PCI_CONFIG		"/sys/bus/pci/devices/%s/config"
+ #define SYSFS_PCI_REMOVE		PCI_DEV_DIR "/remove"
+ #define SYSFS_PCI_RESCAN		"/sys/bus/pci/rescan"
++#define SYSFS_PCI_DEVICES_DIR		"/sys/bus/pci/devices"
+ 
+ /*****************************************************************************/
+ /* Local function declarations                                               */
+@@ -125,6 +127,14 @@ static int get_new_device_handle(ami_device **new_dev, uint16_t bdf, bool with_s
+  */
+ static int pci_remove(uint16_t bdf);
+ 
++/**
++ * pci_remove_slot() - Remove all PCI functions for a given bus/device.
++ * @bdf: Numeric BDF; function bits are ignored.
++ *
++ * Return: AMI_STATUS_OK or AMI_STATUS_ERROR.
++ */
++static int pci_remove_slot(uint16_t bdf);
++
+ /**
+  * pci_rescan() - Rescan the PCI tree.
+  *
+@@ -232,6 +242,82 @@ static int pci_remove(uint16_t bdf)
+ 	return ret;
+ }
+ 
++/*
++ * Remove all PCI functions on a slot from the PCI tree.
++ */
++static int pci_remove_slot(uint16_t bdf)
++{
++	int remove_ret = AMI_STATUS_ERROR;
++	bool removed_any = false;
++	DIR *pci_dir = NULL;
++	struct dirent *entry = NULL;
++	uint8_t functions[8] = { 0 };
++	bool function_seen[8] = { false };
++	int function_count = 0;
++	int i = 0;
++	int j = 0;
++	uint8_t bus = AMI_PCI_BUS(bdf);
++	uint8_t dev = AMI_PCI_DEV(bdf);
++	unsigned int domain = 0;
++	unsigned int bus_scan = 0;
++	unsigned int dev_scan = 0;
++	unsigned int fn_scan = 0;
++	char remove_path[AMI_SYSFS_PATH_MAX] = { 0 };
++
++	pci_dir = opendir(SYSFS_PCI_DEVICES_DIR);
++	if (!pci_dir)
++		return AMI_API_ERROR(AMI_ERROR_EBADF);
++
++	while ((entry = readdir(pci_dir)) != NULL) {
++		if (sscanf(entry->d_name, "%x:%x:%x.%x", &domain, &bus_scan,
++			&dev_scan, &fn_scan) != 4)
++			continue;
++
++		if ((domain != 0) || (bus_scan != bus) ||
++			(dev_scan != dev) || (fn_scan > 7))
++			continue;
++
++		if (!function_seen[fn_scan]) {
++			functions[function_count++] = (uint8_t)fn_scan;
++			function_seen[fn_scan] = true;
++		}
++	}
++
++	closedir(pci_dir);
++
++	/* Remove higher functions first and the management function last. */
++	for (i = 0; i < (function_count - 1); i++) {
++		for (j = i + 1; j < function_count; j++) {
++			if (functions[i] < functions[j]) {
++				uint8_t tmp = functions[i];
++
++				functions[i] = functions[j];
++				functions[j] = tmp;
++			}
++		}
++	}
++
++	for (i = 0; i < function_count; i++) {
++		uint8_t function = functions[i];
++
++		snprintf(remove_path, AMI_SYSFS_PATH_MAX, SYSFS_PCI_REMOVE,
++			bus, dev, function);
++		if (access(remove_path, F_OK) == AMI_LINUX_STATUS_ERROR)
++			continue;
++
++		remove_ret = pci_remove(AMI_MK_BDF(bus, dev, function));
++		if (remove_ret != AMI_STATUS_OK)
++			return remove_ret;
++
++		removed_any = true;
++	}
++
++	if (!removed_any)
++		return AMI_API_ERROR(AMI_ERROR_ENODEV);
++
++	return AMI_STATUS_OK;
++}
++
+ /*
+  * Rescan the PCI bus.
+  */
+@@ -593,7 +679,7 @@ int ami_dev_pci_reload(ami_device **dev, const char *bdf)
+ 		bdf_num = ami_parse_bdf(bdf);
+ 	}
+ 
+-	if (pci_remove(bdf_num) == AMI_STATUS_OK) {
++	if (pci_remove_slot(bdf_num) == AMI_STATUS_OK) {
+ 		if ((ret = pci_rescan()) == AMI_STATUS_OK) {
+ 			/* Check if we need to update the device handle. */
+ 			if (dev)
+@@ -656,7 +742,7 @@ int ami_dev_hot_reset(ami_device **dev)
+ 	has_sensors = ((*dev)->sensors != NULL);
+ 	bdf = (*dev)->bdf;
+ 	ami_dev_delete(dev);
+-	ret = pci_remove(bdf);
++	ret = pci_remove_slot(bdf);
+ 	if (ret)
+ 		goto close_config;
+ 	

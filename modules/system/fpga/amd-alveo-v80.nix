@@ -109,37 +109,35 @@ in
               already_ready=0
             fi
           done
-          if ((already_ready)); then
-            printf 'All configured V80 devices are already bound to AMI and READY\n'
-            exit 0
-          fi
-
           for bdf in ${lib.escapeShellArgs (map (device: device.pciAddress) devices)}; do
             config_path="/sys/bus/pci/devices/$bdf/config"
             vsec=
-            stable_samples=0
+            valid_samples=0
             for ((attempt = 1; attempt <= 120; attempt++)); do
               vsec=
               if [[ -r "$config_path" ]]; then
                 vsec="$(od -A n -t x4 -j 1536 -N 4 "$config_path" 2>/dev/null | tr -d ' \n')"
               fi
               if [[ "$vsec" == 0001000b ]]; then
-                ((stable_samples += 1))
-              else
-                stable_samples=0
+                ((valid_samples += 1))
               fi
-              printf 'V80 %s VSEC sample %d: 0x%s (stable %d/10)\n' \
-                "$bdf" "$attempt" "$vsec" "$stable_samples"
-              if ((stable_samples == 10)); then
+              printf 'V80 %s VSEC sample %d: 0x%s (valid %d/10)\n' \
+                "$bdf" "$attempt" "$vsec" "$valid_samples"
+              if ((valid_samples == 10)); then
                 break
               fi
               sleep 0.5
             done
-            if ((stable_samples != 10)); then
-              printf 'V80 %s did not expose a stable VSEC 0x0001000b\n' "$bdf" >&2
+            if ((valid_samples != 10)); then
+              printf 'V80 %s did not expose VSEC 0x0001000b ten times\n' "$bdf" >&2
               exit 1
             fi
           done
+
+          if ((already_ready)); then
+            printf 'All configured V80 devices have stable VSEC and are bound to AMI in READY state\n'
+            exit 0
+          fi
 
           modprobe ami
 

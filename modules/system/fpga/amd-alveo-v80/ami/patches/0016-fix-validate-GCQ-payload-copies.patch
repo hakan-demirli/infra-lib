@@ -1,0 +1,156 @@
+From 2a45244abc277c28eb081b173d77ef4f6dd16f15 Mon Sep 17 00:00:00 2001
+From: hakan-demirli <ehdemirli@proton.me>
+Date: Thu, 10 Sep 2026 00:20:32 +0200
+Subject: [PATCH 16/16] fix: validate GCQ payload copies
+
+---
+ driver/ami_amc_control.c | 63 ++++++++++++++++++++++++++--------------
+ 1 file changed, 42 insertions(+), 21 deletions(-)
+
+diff --git a/driver/ami_amc_control.c b/driver/ami_amc_control.c
+index f63078c..daf52ea 100644
+--- a/driver/ami_amc_control.c
++++ b/driver/ami_amc_control.c
+@@ -160,6 +160,17 @@ static bool amc_range_is_valid(struct amc_control_ctxt *amc_ctrl_ctxt,
+ 		length <= amc_ctrl_ctxt->gcq_payload_len - offset;
+ }
+ 
++static bool amc_payload_range_is_valid(struct amc_control_ctxt *amc_ctrl_ctxt,
++	uint32_t offset, size_t length)
++{
++	uint64_t end = (uint64_t)amc_ctrl_ctxt->amc_shared_mem.data.amc_data_end + 1;
++
++	return length &&
++		offset >= amc_ctrl_ctxt->amc_shared_mem.data.amc_data_start &&
++		end <= amc_ctrl_ctxt->gcq_payload_len && offset < end &&
++		length <= end - offset;
++}
++
+ static bool amc_shared_mem_is_valid(struct amc_control_ctxt *amc_ctrl_ctxt,
+ 	struct amc_shared_mem *shared_mem)
+ {
+@@ -633,22 +644,24 @@ static void release_gcq_data(struct amc_control_ctxt *amc_ctrl_ctxt)
+  * @dst: the destination address.
+  * @len: the length.
+  *
+- * Return: None.
++ * Return: 0 or negative error code.
+  */
+-static void memcpy_gcq_payload_from_device(struct amc_control_ctxt *amc_ctrl_ctxt, uint32_t offset,
++static int memcpy_gcq_payload_from_device(struct amc_control_ctxt *amc_ctrl_ctxt, uint32_t offset,
+                                            void *dst, size_t len)
+ {
+ 	if (!amc_ctrl_ctxt || !dst)
+-		return;
++		return -EINVAL;
+ 
+-        if ((offset+len) > amc_shared_mem_size(amc_ctrl_ctxt)) {
++        if (!amc_payload_range_is_valid(amc_ctrl_ctxt, offset, len)) {
+                 AMI_ERR(amc_ctrl_ctxt, "Shared memory read access outside of range");
+-                return;
++		return -ERANGE;
+         }
+ 
+ 	memcpy_fromio(dst,
+ 		(void __iomem *)(amc_ctrl_ctxt->gcq_payload_base_virt_addr + offset),
+ 		len);
++
++	return 0;
+ }
+ 
+ /**
+@@ -658,17 +671,17 @@ static void memcpy_gcq_payload_from_device(struct amc_control_ctxt *amc_ctrl_ctx
+  * @data: the data pointer.
+  * @len: the length.
+  *
+- * Return: None.
++ * Return: 0 or negative error code.
+  */
+-static void memcpy_gcq_payload_to_device(struct amc_control_ctxt *amc_ctrl_ctxt, uint32_t offset,
++static int memcpy_gcq_payload_to_device(struct amc_control_ctxt *amc_ctrl_ctxt, uint32_t offset,
+                                          const void *data, size_t len)
+ {
+ 	if (!amc_ctrl_ctxt || !data)
+-		return;
++		return -EINVAL;
+ 
+-        if ((offset+len) > amc_shared_mem_size(amc_ctrl_ctxt)) {
++        if (!amc_payload_range_is_valid(amc_ctrl_ctxt, offset, len)) {
+                 AMI_ERR(amc_ctrl_ctxt, "Shared memory write access outside of range");
+-                return;
++		return -ERANGE;
+         }
+ 
+ 	memcpy_toio(
+@@ -676,6 +689,8 @@ static void memcpy_gcq_payload_to_device(struct amc_control_ctxt *amc_ctrl_ctxt,
+ 		data,
+ 		len
+ 	);
++
++	return 0;
+ }
+ 
+ /**
+@@ -1331,7 +1346,10 @@ int submit_gcq_command(struct amc_control_ctxt *amc_ctrl_ctxt, enum gcq_submit_c
+ 		}
+ 
+ 		/* Copy payload data to address */
+-		memcpy_gcq_payload_to_device(amc_ctrl_ctxt, payload_address, data_buf, data_size);
++		ret = memcpy_gcq_payload_to_device(amc_ctrl_ctxt, payload_address,
++			data_buf, payload_size);
++		if (ret)
++			goto done;
+ 	}
+ 	break;
+ 
+@@ -1418,7 +1436,10 @@ int submit_gcq_command(struct amc_control_ctxt *amc_ctrl_ctxt, enum gcq_submit_c
+ 
+ 		if (req_type == AMC_PROXY_CMD_RW_REQUEST_WRITE) {
+ 			/* Copy payload data to address */
+-			memcpy_gcq_payload_to_device(amc_ctrl_ctxt, payload_address, data_buf, data_size);
++			ret = memcpy_gcq_payload_to_device(amc_ctrl_ctxt, payload_address,
++				data_buf, payload_size);
++			if (ret)
++				goto done;
+ 		}
+         }
+         break;
+@@ -1628,9 +1649,9 @@ int submit_gcq_command(struct amc_control_ctxt *amc_ctrl_ctxt, enum gcq_submit_c
+ 	case AMC_CMD_ID_SENSOR:
+ 	{
+ 		ret = amc_proxy_get_response_sensor(amc_proxy_cmd);
+-		if (!ret) {
+-			memcpy_gcq_payload_from_device(amc_ctrl_ctxt, payload_address, data_buf, data_size);
+-		}
++		if (!ret)
++			ret = memcpy_gcq_payload_from_device(amc_ctrl_ctxt,
++				payload_address, data_buf, payload_size);
+ 	}
+ 	break;
+ 		
+@@ -1658,9 +1679,9 @@ int submit_gcq_command(struct amc_control_ctxt *amc_ctrl_ctxt, enum gcq_submit_c
+         {
+ 		ret = amc_proxy_get_response_eeprom_read_write(amc_proxy_cmd);
+                 if (!ret) {
+-                        if(EEPROM_GET_TYPE(flags) == AMC_PROXY_CMD_RW_REQUEST_READ) {
+-			        memcpy_gcq_payload_from_device(amc_ctrl_ctxt, payload_address, data_buf, data_size);
+-                        }
++			if (EEPROM_GET_TYPE(flags) == AMC_PROXY_CMD_RW_REQUEST_READ)
++				ret = memcpy_gcq_payload_from_device(amc_ctrl_ctxt,
++					payload_address, data_buf, payload_size);
+ 		}
+ 		break;
+         }
+@@ -1669,9 +1690,9 @@ int submit_gcq_command(struct amc_control_ctxt *amc_ctrl_ctxt, enum gcq_submit_c
+ 	{
+ 		ret = amc_proxy_get_response_module_read_write(amc_proxy_cmd);
+                 if (!ret) {
+-                        if(MODULE_RW_TYPE(flags) == AMC_PROXY_CMD_RW_REQUEST_READ) {
+-			        memcpy_gcq_payload_from_device(amc_ctrl_ctxt, payload_address, data_buf, data_size);
+-                        }
++			if (MODULE_RW_TYPE(flags) == AMC_PROXY_CMD_RW_REQUEST_READ)
++				ret = memcpy_gcq_payload_from_device(amc_ctrl_ctxt,
++					payload_address, data_buf, payload_size);
+ 		}
+ 		break;
+ 	}

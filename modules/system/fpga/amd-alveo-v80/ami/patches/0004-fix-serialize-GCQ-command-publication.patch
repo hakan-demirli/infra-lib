@@ -1,0 +1,192 @@
+From 1b3bea26f83e7382410f2177be48b2a98793f224 Mon Sep 17 00:00:00 2001
+From: hakan-demirli <ehdemirli@proton.me>
+Date: Wed, 9 Sep 2026 23:10:55 +0200
+Subject: [PATCH 04/16] fix: serialize GCQ command publication
+
+---
+ driver/amc_proxy.c | 116 +++++++++++++++++----------------------------
+ 1 file changed, 43 insertions(+), 73 deletions(-)
+
+diff --git a/driver/amc_proxy.c b/driver/amc_proxy.c
+index 615908e..d8325c2 100644
+--- a/driver/amc_proxy.c
++++ b/driver/amc_proxy.c
+@@ -795,6 +795,33 @@ static struct amc_proxy_list_entry * amc_proxy_find_matching_proxy_instance(cons
+         return (NULL);
+ }
+ 
++static int amc_proxy_submit_request(struct amc_proxy_instance *inst,
++                                    struct amc_proxy_cmd_struct *cmd,
++                                    struct amc_proxy_cmd_request *request)
++{
++        uint32_t ret = FW_IF_ERRORS_INVALID_HANDLE;
++
++        if (!inst || !cmd || !request)
++                return -EINVAL;
++
++        mutex_lock(&inst->lock);
++        if (inst->initialised) {
++                ret = inst->fw_if_handle->write(inst->fw_if_handle, 0,
++                                                (uint8_t *)request,
++                                                sizeof(*request), 0);
++                if (ret == FW_IF_ERRORS_NONE)
++                        list_add_tail(&cmd->cmd_list, &inst->submitted_cmds);
++        }
++        mutex_unlock(&inst->lock);
++
++        if (ret != FW_IF_ERRORS_NONE) {
++                PR_ERR("FW_IF write request failed: %d", ret);
++                return -EIO;
++        }
++
++        return 0;
++}
++
+ 
+ /*****************************************************************************/
+ /* Public functions                                                          */
+@@ -982,16 +1009,8 @@ int amc_proxy_request_identity(struct amc_proxy_cmd_struct *cmd)
+                 request_hdr->opcode = AMC_PROXY_CMD_OPCODE_IDENTIFY;
+                 request_hdr->count = 0; /* No payload for identity request */
+                 request_hdr->cid = cmd->cmd_cid;
+-                ret = amc_ctxt->inst.fw_if_handle->write(amc_ctxt->inst.fw_if_handle, 0,
+-                                                                (uint8_t*)&(request_cmd_entry),
+-                                                                sizeof(request_cmd_entry), 0);
+-                if (ret == FW_IF_ERRORS_NONE) {
+-                        list_add_tail(&(cmd->cmd_list), &(amc_ctxt->inst.submitted_cmds));
+-                        ret = 0;
+-                } else {
+-                        PR_ERR("FW_IF write request failed: %d", ret);
+-                        ret = -EIO;
+-                }
++                ret = amc_proxy_submit_request(&amc_ctxt->inst, cmd,
++                                               &request_cmd_entry);
+         }
+ 
+         return ret;
+@@ -1029,15 +1048,8 @@ int amc_proxy_request_sensor(struct amc_proxy_cmd_struct *cmd,
+                 request_cmd_entry.sensor_payload.addr_type = 0;
+                 request_cmd_entry.sensor_payload.sensor_id = sensor_req->sensor_id;
+ 
+-                ret = amc_ctxt->inst.fw_if_handle->write(amc_ctxt->inst.fw_if_handle, 0,
+-                                                                (uint8_t*)&(request_cmd_entry),
+-                                                                sizeof(request_cmd_entry), 0);
+-                if (ret == FW_IF_ERRORS_NONE) {
+-                        list_add_tail(&(cmd->cmd_list), &(amc_ctxt->inst.submitted_cmds));
+-                } else {
+-                        PR_ERR("FW_IF write request failed; %d", ret);
+-                        ret = -EIO;
+-                }
++                ret = amc_proxy_submit_request(&amc_ctxt->inst, cmd,
++                                               &request_cmd_entry);
+         }
+ 
+         return ret;
+@@ -1081,15 +1093,8 @@ int amc_proxy_request_pdi_download(struct amc_proxy_cmd_struct *cmd,
+                         request_cmd_entry.pdi_payload.partition_sel = pdi_download->partition;
+                 }
+ 
+-                ret = amc_ctxt->inst.fw_if_handle->write(amc_ctxt->inst.fw_if_handle, 0,
+-                                                                (uint8_t*)&(request_cmd_entry),
+-                                                                sizeof(request_cmd_entry), 0);
+-                if (ret == FW_IF_ERRORS_NONE) {
+-                        list_add_tail(&(cmd->cmd_list), &(amc_ctxt->inst.submitted_cmds));
+-                } else {
+-                        PR_ERR("FW_IF write request failed; %d", ret);
+-                        ret = -EIO;
+-                }
++                ret = amc_proxy_submit_request(&amc_ctxt->inst, cmd,
++                                               &request_cmd_entry);
+         }
+ 
+         return ret;
+@@ -1121,15 +1126,8 @@ int amc_proxy_request_device_boot(struct amc_proxy_cmd_struct *cmd,
+                 /* Only set the partition */
+                 request_cmd_entry.pdi_payload.partition_sel = device_boot->partition;
+ 
+-                ret = amc_ctxt->inst.fw_if_handle->write(amc_ctxt->inst.fw_if_handle, 0,
+-                                                                (uint8_t*)&(request_cmd_entry),
+-                                                                sizeof(request_cmd_entry), 0);
+-                if (ret == FW_IF_ERRORS_NONE) {
+-                        list_add_tail(&(cmd->cmd_list), &(amc_ctxt->inst.submitted_cmds));
+-                } else {
+-                        PR_ERR("FW_IF write request failed; %d", ret);
+-                        ret = -EIO;
+-                }
++                ret = amc_proxy_submit_request(&amc_ctxt->inst, cmd,
++                                               &request_cmd_entry);
+         }
+ 
+         return ret;
+@@ -1163,15 +1161,8 @@ int amc_proxy_request_partition_copy(struct amc_proxy_cmd_struct *cmd,
+                 request_cmd_entry.pdi_payload.address = partition_copy->address;
+                 request_cmd_entry.pdi_payload.size = partition_copy->length;
+ 
+-                ret = amc_ctxt->inst.fw_if_handle->write(amc_ctxt->inst.fw_if_handle, 0,
+-                                                                (uint8_t*)&(request_cmd_entry),
+-                                                                sizeof(request_cmd_entry), 0);
+-                if (ret == FW_IF_ERRORS_NONE) {
+-                        list_add_tail(&(cmd->cmd_list), &(amc_ctxt->inst.submitted_cmds));
+-                } else {
+-                        PR_ERR("FW_IF write request failed; %d", ret);
+-                        ret = -EIO;
+-                }
++                ret = amc_proxy_submit_request(&amc_ctxt->inst, cmd,
++                                               &request_cmd_entry);
+         }
+ 
+         return ret;
+@@ -1203,15 +1194,8 @@ int amc_proxy_request_heartbeat(struct amc_proxy_cmd_struct *cmd,
+                 /* Only set the count used to identify the heartbeat message id */
+                 request_cmd_entry.heartbeat_payload.request_id = heartbeat->request_id;
+ 
+-                ret = amc_ctxt->inst.fw_if_handle->write(amc_ctxt->inst.fw_if_handle, 0,
+-                                                         (uint8_t*)&(request_cmd_entry),
+-                                                         sizeof(request_cmd_entry), 0);
+-                if (ret == FW_IF_ERRORS_NONE) {
+-                        list_add_tail(&(cmd->cmd_list), &(amc_ctxt->inst.submitted_cmds));
+-                } else {
+-                        PR_ERR("FW_IF write request failed; %d", ret);
+-                        ret = -EIO;
+-                }
++                ret = amc_proxy_submit_request(&amc_ctxt->inst, cmd,
++                                               &request_cmd_entry);
+         }
+ 
+         return ret;
+@@ -1243,15 +1227,8 @@ int amc_proxy_request_eeprom_read_write(struct amc_proxy_cmd_struct *cmd,
+                 request_cmd_entry.eeprom_payload.address = eeprom_rw->address;
+                 request_cmd_entry.eeprom_payload.len= eeprom_rw->length;
+                 request_cmd_entry.eeprom_payload.offset = eeprom_rw->offset;
+-                ret = amc_ctxt->inst.fw_if_handle->write(amc_ctxt->inst.fw_if_handle, 0,
+-                                                         (uint8_t*)&(request_cmd_entry),
+-                                                         sizeof(request_cmd_entry), 0);
+-                if (ret == FW_IF_ERRORS_NONE) {
+-                        list_add_tail(&(cmd->cmd_list), &(amc_ctxt->inst.submitted_cmds));
+-                } else {
+-                        PR_ERR("FW_IF write request failed; %d", ret);
+-                        ret = -EIO;
+-                }
++                ret = amc_proxy_submit_request(&amc_ctxt->inst, cmd,
++                                               &request_cmd_entry);
+         }
+ 
+         return ret;
+@@ -1285,15 +1262,8 @@ int amc_proxy_request_module_read_write(struct amc_proxy_cmd_struct *cmd,
+                 request_cmd_entry.module_payload.offset = module_rw->offset;
+                 request_cmd_entry.module_payload.len = module_rw->length;
+                 request_cmd_entry.module_payload.req_type = module_rw->type;
+-                ret = amc_ctxt->inst.fw_if_handle->write(amc_ctxt->inst.fw_if_handle, 0,
+-                                                         (uint8_t*)&(request_cmd_entry),
+-                                                         sizeof(request_cmd_entry), 0);
+-                if (ret == FW_IF_ERRORS_NONE) {
+-                        list_add_tail(&(cmd->cmd_list), &(amc_ctxt->inst.submitted_cmds));
+-                } else {
+-                        PR_ERR("FW_IF write request failed; %d", ret);
+-                        ret = -EIO;
+-                }
++                ret = amc_proxy_submit_request(&amc_ctxt->inst, cmd,
++                                               &request_cmd_entry);
+         }
+ 
+         return ret;
