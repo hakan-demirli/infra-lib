@@ -1,0 +1,60 @@
+From a2fc1e373f91590c4006a2224004287e36512056 Mon Sep 17 00:00:00 2001
+From: hakan-demirli <ehdemirli@proton.me>
+Date: Fri, 11 Sep 2026 02:27:15 +0200
+Subject: [PATCH 21/22] fix: retry inaccessible GCQ registers
+
+---
+ driver/gcq-driver/src/gcq_driver.c | 30 +++++++++++++++++++++---------
+ 1 file changed, 21 insertions(+), 9 deletions(-)
+
+diff --git a/driver/gcq-driver/src/gcq_driver.c b/driver/gcq-driver/src/gcq_driver.c
+index 4abc7fc..5203ea9 100644
+--- a/driver/gcq-driver/src/gcq_driver.c
++++ b/driver/gcq-driver/src/gcq_driver.c
+@@ -29,6 +29,8 @@
+ 
+ #define CHECK_32BIT_ALIGNMENT( x )      ( 0 == ( x & 0x3 ) )
+ 
++#define GCQ_REGISTER_READ_RETRY_COUNT   ( 3 )
++
+ 
+ /*****************************************************************************/
+ /* Enums                                                                     */
+@@ -131,15 +133,25 @@ static inline uint32_t prvucGCQFastForward( const GCQ_INSTANCE_TYPE *pxGCQInstan
+ 
+ static inline uint32_t prvucGCQRegistersAvailable( const GCQ_INSTANCE_TYPE *pxGCQInstance )
+ {
+-    uint32_t ulSqTailPointer = pxGCQInstance->pxGCQIOAccess->xGCQReadReg32(
+-        pxGCQInstance->ullBaseAddr + GCQ_PRODUCER_SQ_TAIL_POINTER
+-    );
+-    uint32_t ulCqTailPointer = pxGCQInstance->pxGCQIOAccess->xGCQReadReg32(
+-        pxGCQInstance->ullBaseAddr + GCQ_PRODUCER_CQ_TAIL_POINTER
+-    );
+-
+-    return ( ( uint32_t )-1 != ulSqTailPointer ) &&
+-           ( ( uint32_t )-1 != ulCqTailPointer );
++    uint8_t ucRetry = 0;
++
++    for( ucRetry = 0; ucRetry < GCQ_REGISTER_READ_RETRY_COUNT; ucRetry++ )
++    {
++        uint32_t ulSqTailPointer = pxGCQInstance->pxGCQIOAccess->xGCQReadReg32(
++            pxGCQInstance->ullBaseAddr + GCQ_PRODUCER_SQ_TAIL_POINTER
++        );
++        uint32_t ulCqTailPointer = pxGCQInstance->pxGCQIOAccess->xGCQReadReg32(
++            pxGCQInstance->ullBaseAddr + GCQ_PRODUCER_CQ_TAIL_POINTER
++        );
++
++        if( ( ( uint32_t )-1 != ulSqTailPointer ) &&
++            ( ( uint32_t )-1 != ulCqTailPointer ) )
++        {
++            return GCQ_TRUE;
++        }
++    }
++
++    return GCQ_FALSE;
+ }
+ 
+ /**
+-- 
+2.55.0
+

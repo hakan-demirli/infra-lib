@@ -54,6 +54,8 @@ stdenv.mkDerivation (finalAttrs: {
     patch -p1 < ${./patches/0018-fix-remove-all-slot-functions-before-reset.patch}
     patch -p1 < ${./patches/0019-fix-verify-hot-reset-and-wait-for-reprobe.patch}
     patch -p1 < ${./patches/0020-fix-define-GCQ-bit-masks-without-UINT32_MAX.patch}
+    patch -p1 < ${./patches/0021-fix-retry-inaccessible-GCQ-registers.patch}
+    patch -p1 < ${./patches/0022-fix-report-critical-sensors-without-SIGBUS.patch}
   '';
 
   buildPhase = ''

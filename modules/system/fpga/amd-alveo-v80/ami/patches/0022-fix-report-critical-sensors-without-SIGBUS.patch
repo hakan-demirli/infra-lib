@@ -1,0 +1,28 @@
+From 0effda3199619516f70bda38e84f0c6292c7c146 Mon Sep 17 00:00:00 2001
+From: hakan-demirli <ehdemirli@proton.me>
+Date: Fri, 11 Sep 2026 02:27:21 +0200
+Subject: [PATCH 22/22] fix: report critical sensors without SIGBUS
+
+---
+ driver/ami_hwmon.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/driver/ami_hwmon.c b/driver/ami_hwmon.c
+index 42b78d8..0fea10b 100644
+--- a/driver/ami_hwmon.c
++++ b/driver/ami_hwmon.c
+@@ -1303,9 +1303,9 @@ int read_sensor_val(struct pf_dev_struct *pf_dev, enum hwmon_sensor_types type,
+ 
+ 			if (!limit_err && (value >= limit)) {
+ 				DEV_CRIT_WARN(pf_dev->pci,
+-					"Sensor reading over critical threshold - killing all applications"
++					"Sensor type %d channel %d reading %ld over critical threshold %ld",
++					type, channel, value, limit
+ 				);
+-				kill_pf_dev_apps(pf_dev, SIGBUS);
+ 			}
+ 		}
+ 
+-- 
+2.55.0
+
