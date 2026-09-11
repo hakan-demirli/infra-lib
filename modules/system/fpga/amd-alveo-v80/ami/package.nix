@@ -56,6 +56,7 @@ stdenv.mkDerivation (finalAttrs: {
     patch -p1 < ${./patches/0020-fix-define-GCQ-bit-masks-without-UINT32_MAX.patch}
     patch -p1 < ${./patches/0021-fix-retry-inaccessible-GCQ-registers.patch}
     patch -p1 < ${./patches/0022-fix-report-critical-sensors-without-SIGBUS.patch}
+    patch -p1 < ${./patches/0023-fix-tolerate-inaccessible-idle-GCQ-polls.patch}
   '';
 
   buildPhase = ''

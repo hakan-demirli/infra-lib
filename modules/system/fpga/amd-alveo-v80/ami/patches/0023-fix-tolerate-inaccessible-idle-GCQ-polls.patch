@@ -1,0 +1,29 @@
+From 615787eb473a7ffa684ee5ad744c5f27ed7f97ac Mon Sep 17 00:00:00 2001
+From: hakan-demirli <ehdemirli@proton.me>
+Date: Fri, 11 Sep 2026 02:51:35 +0200
+Subject: [PATCH] fix: tolerate inaccessible idle GCQ polls
+
+---
+ driver/gcq-driver/src/gcq_driver.c | 6 +-----
+ 1 file changed, 1 insertion(+), 5 deletions(-)
+
+diff --git a/driver/gcq-driver/src/gcq_driver.c b/driver/gcq-driver/src/gcq_driver.c
+index 5203ea9..305e7ce 100644
+--- a/driver/gcq-driver/src/gcq_driver.c
++++ b/driver/gcq-driver/src/gcq_driver.c
+@@ -334,11 +334,7 @@ static inline GCQ_ERRORS_TYPE prvxGCQConsume( GCQ_INSTANCE_TYPE *pxGCQInstance,
+         /* Bind into the correct ring */
+         pxRing = pxGCQInstance->pxGCQConsumer;
+ 
+-        if( GCQ_FALSE == prvucGCQRegistersAvailable( pxGCQInstance ) )
+-        {
+-            xStatus = GCQ_ERRORS_DEVICE_UNAVAILABLE;
+-        }
+-        else if( GCQ_TRUE == likely( prvucGCQCanConsume( pxGCQInstance, pxRing ) ) )
++        if( GCQ_TRUE == likely( prvucGCQCanConsume( pxGCQInstance, pxRing ) ) )
+         {
+             *ullSlotAddr = prvullGCQRingGetSlotPtrConsumed( pxRing );
+         }
+-- 
+2.55.0
+
