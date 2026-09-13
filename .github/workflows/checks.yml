@@ -11,143 +11,56 @@ defaults:
     shell: bash
 
 jobs:
-  fast-checks:
+  discover:
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: ubuntu-latest
-            system: x86_64-linux
-          - runner: ubuntu-22.04-arm
-            system: aarch64-linux
-          - runner: macos-latest
-            system: aarch64-darwin
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-        with:
-          persist-credentials: false
-      - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25
-      - env:
-          SYSTEM: ${{ matrix.system }}
-        run: |
-          set -euo pipefail
-          checks=$(nix eval --json --no-update-lock-file ".#checks.$SYSTEM" --apply builtins.attrNames \
-            | jq -er 'map(select(startswith("test-") | not)) | if length == 0 then error("No fast checks") else .[] end')
-          while IFS= read -r check; do
-            nix build --no-link --no-update-lock-file ".#checks.$SYSTEM.$check"
-          done <<< "$checks"
-
-  discover-tests:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
     outputs:
-      vm: ${{ steps.discover.outputs.vm }}
-      contracts: ${{ steps.discover.outputs.contracts }}
+      matrix: ${{ steps.matrix.outputs.value }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-      - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25
-      - id: discover
-        run: |
-          set -euo pipefail
-          tests=$(nix eval --json --no-update-lock-file '.#checks.x86_64-linux' --apply '
-            checks: builtins.mapAttrs (_: value: value ? driver)
-              (builtins.removeAttrs checks (builtins.filter
-                (name: builtins.match "test-.*" name == null)
-                (builtins.attrNames checks)))')
-          vm=$(jq -ce '[to_entries[] | select(.value) | .key] | if length == 0 then error("No VM tests") else . end' <<< "$tests")
-          contracts=$(jq -ce '[to_entries[] | select(.value | not) | .key] | if length == 0 then error("No contract tests") else . end' <<< "$tests")
-          echo "vm=$vm" >> "$GITHUB_OUTPUT"
-          echo "contracts=$contracts" >> "$GITHUB_OUTPUT"
-
-  contracts:
-    needs: [discover-tests]
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-        with:
-          persist-credentials: false
-      - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25
-      - env:
-          TESTS: ${{ needs.discover-tests.outputs.contracts }}
-        run: |
-          set -euo pipefail
-          checks=$(jq -er '.[]' <<< "$TESTS")
-          while IFS= read -r check; do
-            nix build --no-link --no-update-lock-file ".#checks.x86_64-linux.$check"
-          done <<< "$checks"
-
-  dependencies:
-    needs: [fast-checks, contracts]
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-        with:
-          persist-credentials: false
-      - uses: BRAINSia/free-disk-space@7048ffbf50819342ac964ef3998a51c2564a8a75
-        with:
-          tool-cache: false
-          mandb: true
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: false
-      - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25
+      - uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c
       - uses: nix-community/cache-nix-action@b05e2d861a8d616a0cd4c91de03de22dfe447f57
         with:
-          primary-key: drivers-v1-x86_64-linux-${{ hashFiles('flake.lock') }}-${{ github.sha }}
-          restore-prefixes-first-match: drivers-v1-x86_64-linux-${{ hashFiles('flake.lock') }}-
-      - name: Build shared service drivers
+          primary-key: eval-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
+          restore-prefixes-first-match: eval-v2-${{ runner.os }}-${{ runner.arch }}-
+          gc-max-store-size: 1G
+      - id: matrix
         run: |
           set -euo pipefail
-          nix build --no-update-lock-file --out-link result-ci-driver \
-            .#checks.x86_64-linux.test-logs.driver \
-            .#checks.x86_64-linux.test-slurm-on-cephfs-job-roundtrip.driver
+          matrix=$(nix eval --json --no-update-lock-file .#githubActions.matrix)
+          jq -e '.include | length > 0' <<< "$matrix"
+          echo "value=$matrix" >> "$GITHUB_OUTPUT"
 
-  vm-tests:
-    needs: [discover-tests, dependencies]
-    runs-on: ubuntu-latest
+  build:
+    needs: discover
+    name: build (${{ matrix.system }}, ${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     strategy:
       fail-fast: false
-      matrix:
-        test: ${{ fromJSON(needs.discover-tests.outputs.vm) }}
+      matrix: ${{ fromJSON(needs.discover.outputs.matrix) }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-      - uses: BRAINSia/free-disk-space@7048ffbf50819342ac964ef3998a51c2564a8a75
-        with:
-          tool-cache: false
-          mandb: true
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: false
-      - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25
+      - uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c
       - uses: nix-community/cache-nix-action@b05e2d861a8d616a0cd4c91de03de22dfe447f57
         with:
-          primary-key: drivers-v1-x86_64-linux-${{ hashFiles('flake.lock') }}-${{ github.sha }}
-          save: false
-      - run: nix build --no-link --no-update-lock-file --print-build-logs '.#checks.x86_64-linux.${{ matrix.test }}'
+          primary-key: build-v2-${{ matrix.system }}-${{ matrix.name }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
+          restore-prefixes-first-match: build-v2-${{ matrix.system }}-${{ matrix.name }}-
+          gc-max-store-size: 0
+      - env:
+          ATTRIBUTE: ${{ matrix.attr }}
+        run: nix build --no-update-lock-file --print-build-logs --out-link result-ci ".#$ATTRIBUTE"
 
   required-result:
-    needs: [fast-checks, discover-tests, contracts, dependencies, vm-tests]
+    needs: [discover, build]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - env:
           RESULTS: ${{ toJSON(needs) }}
-        run: |
-          set -euo pipefail
-          jq -e 'length == 5 and all(.[]; .result == "success")' <<< "$RESULTS"
+        run: jq -e 'length == 2 and all(.[]; .result == "success")' <<< "$RESULTS"

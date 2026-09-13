@@ -12,6 +12,7 @@
   disko-wiring = import ./disko-wiring.nix { inherit pkgs self; };
   disko-installer-contract = import ./disko-installer-contract.nix { inherit pkgs self; };
   boot-policy = import ./boot-policy.nix { inherit pkgs self inputs; };
+  ci-workflows = import ./ci-workflows.nix { inherit pkgs; };
   impermanence-contract = import ./impermanence-contract.nix {
     inherit pkgs self inputs;
   };

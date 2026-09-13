@@ -1,12 +1,14 @@
-{ inputs, ... }:
-{
+_: {
   perSystem =
     { pkgs, ... }:
     {
       checks.ci-policy =
         pkgs.runCommand "check-ci-policy"
           {
-            src = inputs.self;
+            src = pkgs.lib.fileset.toSource {
+              root = ../../../..;
+              fileset = ../../../../.github;
+            };
             nativeBuildInputs = [
               pkgs.actionlint
               pkgs.shellcheck
