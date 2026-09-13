@@ -90,6 +90,7 @@ pkgs.testers.runNixOSTest {
             machine.succeed(f"test -s /persist/system{key}")
             machine.succeed(f"test -s /persist/system{key}.pub")
             machine.succeed(f"test $(stat -c %a /persist/system{key}) = 600")
+            machine.succeed(f"test $(stat -c %a /persist/system{key}.pub) = 644")
         for attempt in range(2):
             machine.succeed("touch /root/volatile-probe")
             machine.shutdown()
@@ -99,6 +100,7 @@ pkgs.testers.runNixOSTest {
             for key in keys:
                 assert machine.succeed(f"ssh-keygen -y -f {key}") == public_keys[key]
                 machine.succeed(f"test $(stat -c %a /persist/system{key}) = 600")
+                machine.succeed(f"test $(stat -c %a /persist/system{key}.pub) = 644")
     existing.succeed("cmp /persist/system/etc/ssh/custom_host_key ${fixture.privateKey}")
   '';
 }
