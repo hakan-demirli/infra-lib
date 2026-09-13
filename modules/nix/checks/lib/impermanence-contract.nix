@@ -103,6 +103,53 @@ let
     host = mkHost { homeMode = "selective"; };
     extraModule.system.impermanence.persistentUserDirs = [ "Documents" ];
   };
+  ssh = evalImpermanence {
+    extraModule.services.openssh.enable = true;
+  };
+  customSsh = evalImpermanence {
+    extraModule.services.openssh = {
+      enable = true;
+      hostKeys = [
+        {
+          type = "ed25519";
+          path = "/var/lib/custom-ssh/host_key";
+        }
+      ];
+    };
+  };
+  explicitSsh = evalImpermanence {
+    host = mkHost {
+      persistedFiles = [ "/etc/ssh/ssh_host_ed25519_key" ];
+    };
+    extraModule.services.openssh.enable = true;
+  };
+  persistedSshDirectory = evalImpermanence {
+    host = mkHost { persistedPaths = [ "/etc/ssh" ]; };
+    extraModule.services.openssh.enable = true;
+  };
+  externallyManagedSsh = evalImpermanence {
+    extraModule.services.openssh = {
+      enable = true;
+      hostKeys =
+        map
+          (directory: {
+            type = "ed25519";
+            path = "${directory}/host_key";
+          })
+          [
+            "/persist/ssh"
+            "/nix/ssh"
+            "/run/secrets"
+          ];
+    };
+  };
+  disabledSshPersistence = evalImpermanence {
+    host = mkHost { enable = false; };
+    extraModule.services.openssh.enable = true;
+  };
+  systemFilePaths =
+    evaluated:
+    map (file: file.filePath) evaluated.config.environment.persistence."/persist/system".files;
 
   evalLayout =
     homeMode:
@@ -123,6 +170,7 @@ let
   persistedSystemFiles = map (
     file: file.filePath
   ) valid.config.environment.persistence."/persist/system".files;
+  sshFiles = systemFilePaths ssh;
 
   checks = {
     valid-has-no-contract-failure = !lib.any (lib.hasPrefix "host 'test-host':") (failedMessages valid);
@@ -135,6 +183,25 @@ let
       lib.elem "/etc/machine-id" persistedSystemFiles
       && lib.elem "/var/lib/systemd/credential.secret" persistedSystemFiles;
     host-identity-precedes-file-persistence = lib.elem "preparePersistentHostIdentity" valid.config.system.activationScripts.persist-files.deps;
+    ssh-host-keys-are-persistent = lib.all (
+      key: lib.elem key.path sshFiles && lib.elem "${key.path}.pub" sshFiles
+    ) ssh.config.services.openssh.hostKeys;
+    custom-ssh-key-paths-are-persistent = lib.all (path: lib.elem path (systemFilePaths customSsh)) [
+      "/var/lib/custom-ssh/host_key"
+      "/var/lib/custom-ssh/host_key.pub"
+    ];
+    explicit-ssh-key-is-not-duplicated =
+      lib.count (path: path == "/etc/ssh/ssh_host_ed25519_key") (systemFilePaths explicitSsh) == 1
+      && !hasFailure "duplicate system persistence file" explicitSsh;
+    ssh-disabled-adds-no-key-files = lib.all (
+      key: !lib.elem key.path persistedSystemFiles && !lib.elem "${key.path}.pub" persistedSystemFiles
+    ) valid.config.services.openssh.hostKeys;
+    persisted-ssh-directory-adds-no-key-files =
+      systemFilePaths persistedSshDirectory == persistedSystemFiles;
+    externally-managed-ssh-adds-no-key-files =
+      systemFilePaths externallyManagedSsh == persistedSystemFiles;
+    disabled-impermanence-adds-no-ssh-persistence =
+      disabledSshPersistence.config.environment.persistence == { };
     selective-emits-all-users =
       lib.attrNames selective.config.environment.persistence."/persist".users == [
         "test-user-a"

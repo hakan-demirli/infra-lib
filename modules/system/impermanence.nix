@@ -29,7 +29,39 @@ let
     "/var/lib/systemd/credential.secret"
   ];
   systemPaths = defaultSystemPaths ++ cfg.persistentDirs ++ hostImpermanence.persisted_paths;
-  systemFiles = defaultSystemFiles ++ hostImpermanence.persisted_files;
+  declaredSystemFiles = defaultSystemFiles ++ hostImpermanence.persisted_files;
+  sshHostKeyFiles =
+    lib.filter
+      (
+        key:
+        !lib.any (directory: lib.hasPrefix "${lib.removeSuffix "/" directory}/" key.path) (
+          systemPaths
+          ++ [
+            "/persist"
+            "/nix"
+            "/run"
+          ]
+        )
+      )
+      (
+        lib.optionals config.services.openssh.enable (
+          lib.unique (
+            lib.concatMap (key: [
+              {
+                inherit (key) path;
+                mode = "0600";
+              }
+              {
+                path = "${key.path}.pub";
+                mode = "0644";
+              }
+            ]) config.services.openssh.hostKeys
+          )
+        )
+      );
+  systemFiles =
+    declaredSystemFiles
+    ++ map (key: key.path) (lib.filter (key: !lib.elem key.path declaredSystemFiles) sshHostKeyFiles);
   userDirs = cfg.persistentUserDirs ++ cfg.extraPersistentUserDirs;
   userFiles = cfg.persistentUserFiles ++ cfg.extraPersistentUserFiles;
 
@@ -169,6 +201,18 @@ let
       chown root:root "$persistent_credential_path"
       chmod 0400 "$persistent_credential_path"
       bind_file "$credential_path" "$persistent_credential_path" 0400
+
+      ${lib.concatMapStrings (key: ''
+        persistent_host_key=${lib.escapeShellArg "/persist/system${key.path}"}
+        if [[ ! -s "$persistent_host_key" && -s ${lib.escapeShellArg key.path} ]]; then
+          copy_atomic ${lib.escapeShellArg key.path} "$persistent_host_key" ${key.mode}
+        fi
+        if [[ -s "$persistent_host_key" ]]; then
+          chown root:root "$persistent_host_key"
+          chmod ${key.mode} "$persistent_host_key"
+          bind_file ${lib.escapeShellArg key.path} "$persistent_host_key" ${key.mode}
+        fi
+      '') sshHostKeyFiles}
     '';
   };
 in
