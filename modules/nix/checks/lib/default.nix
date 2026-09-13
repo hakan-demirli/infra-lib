@@ -27,6 +27,9 @@
   cluster-fs-modules-smoke = import ./cluster-fs-modules-smoke.nix { inherit pkgs self; };
   mkhost-determinism = import ./mkhost-determinism.nix { inherit pkgs self; };
   ssh-key-rotation = import ./ssh-key-rotation.nix { inherit pkgs self; };
+  ssh-host-key-persistence = import ./ssh-host-key-persistence.nix {
+    inherit pkgs self inputs;
+  };
   user-offboarding = import ./user-offboarding.nix { inherit pkgs self; };
   libvirtd-shutdown = import ./libvirtd-shutdown.nix { inherit pkgs self; };
   virt-host-smoke = import ./virt-host-smoke.nix { inherit pkgs self; };
