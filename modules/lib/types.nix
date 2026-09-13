@@ -765,6 +765,13 @@ let
 
   hostBoot = submodule {
     options = {
+      efi_registration = mkOption {
+        type = enum [
+          "nvram"
+          "fallback"
+        ];
+        default = "nvram";
+      };
       kernel_package = mkOption {
         type = nullOr str;
         default = null;

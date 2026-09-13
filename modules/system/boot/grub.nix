@@ -1,11 +1,12 @@
 { lib, ... }:
 {
+  imports = [ ./default.nix ];
+
   boot.loader = {
-    efi.canTouchEfiVariables = true;
+    systemd-boot.enable = false;
     grub = {
       enable = lib.mkDefault true;
       efiSupport = true;
-      efiInstallAsRemovable = false;
       device = "nodev";
       useOSProber = true;
       default = "saved";

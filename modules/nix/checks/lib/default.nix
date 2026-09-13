@@ -11,6 +11,7 @@
   deployment-role-secrets = import ./deployment-role-secrets.nix { inherit pkgs self; };
   disko-wiring = import ./disko-wiring.nix { inherit pkgs self; };
   disko-installer-contract = import ./disko-installer-contract.nix { inherit pkgs self; };
+  boot-policy = import ./boot-policy.nix { inherit pkgs self inputs; };
   impermanence-contract = import ./impermanence-contract.nix {
     inherit pkgs self inputs;
   };
