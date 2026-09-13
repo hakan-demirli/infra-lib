@@ -48,8 +48,6 @@ with lib;
         ];
       };
     };
-    boot.loader.systemd-boot.enable = mkDefault true;
-    boot.loader.efi.canTouchEfiVariables = mkDefault false;
     users.allowNoPasswordLogin = mkDefault true;
 
     nixpkgs.config.allowUnfree = mkDefault true;

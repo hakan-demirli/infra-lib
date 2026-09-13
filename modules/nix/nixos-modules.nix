@@ -14,6 +14,7 @@ _: {
     overlays = ../common/overlays.nix;
 
     system-base = ../system/base.nix;
+    system-boot = ../system/boot;
     system-server-base = ../system/server-base.nix;
     system-laptop-base = ../system/laptop-base.nix;
     system-impermanence = ../system/impermanence.nix;

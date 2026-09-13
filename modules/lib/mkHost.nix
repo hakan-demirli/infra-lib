@@ -52,6 +52,7 @@ let
     (libRoot + "/modules/common/vector-shipper.nix")
     (libRoot + "/modules/common/sshd.nix")
     (libRoot + "/modules/common/overlays.nix")
+    (libRoot + "/modules/system/boot")
     (libRoot + "/modules/system/impermanence.nix")
     (libRoot + "/modules/system/ephemeral-root.nix")
     (libRoot + "/modules/system/home-storage")
