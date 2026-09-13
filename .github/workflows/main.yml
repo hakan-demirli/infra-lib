@@ -2,8 +2,15 @@ name: "Nix Build and Test"
 
 on:
   push:
-    branches: ["main"]
+    branches: ["unstable"]
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: infra-lib-channel
+  cancel-in-progress: true
 
 jobs:
   fast-checks:
@@ -86,3 +93,48 @@ jobs:
             echo "vm-tests:    ${{ needs.vm-tests.result }}"
             exit 1
           fi
+
+  promote-main:
+    name: promote-main
+    needs: [flake-check]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/unstable' && needs.flake-check.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Promote tested commit to main
+        env:
+          CANDIDATE_SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          git fetch --no-tags origin \
+            "+refs/heads/main:refs/remotes/origin/main" \
+            "+refs/heads/unstable:refs/remotes/origin/unstable"
+
+          main_sha="$(git rev-parse refs/remotes/origin/main)"
+          unstable_sha="$(git rev-parse refs/remotes/origin/unstable)"
+
+          if git merge-base --is-ancestor "$CANDIDATE_SHA" "$main_sha"; then
+            echo "$CANDIDATE_SHA is already contained in main"
+            exit 0
+          fi
+
+          if ! git merge-base --is-ancestor "$main_sha" "$CANDIDATE_SHA"; then
+            echo "main is not an ancestor of candidate $CANDIDATE_SHA" >&2
+            exit 1
+          fi
+
+          if ! git merge-base --is-ancestor "$CANDIDATE_SHA" "$unstable_sha"; then
+            echo "candidate $CANDIDATE_SHA is no longer in unstable" >&2
+            exit 1
+          fi
+
+          gh api --method PATCH \
+            "repos/$GITHUB_REPOSITORY/git/refs/heads/main" \
+            -f sha="$CANDIDATE_SHA" \
+            -F force=false
