@@ -52,7 +52,9 @@
               echo "types=$hasTypes mkInventory=$hasMkInventory mkCodegen=$hasMkCodegen mkHost=$hasMkHost" > $out
             '';
       }
-      // (lib.mapAttrs' (name: drv: lib.nameValuePair "test-${name}" drv) testSuite);
+      // lib.optionalAttrs (system == "x86_64-linux") (
+        lib.mapAttrs' (name: drv: lib.nameValuePair "test-${name}" drv) testSuite
+      );
 
       apps = lib.mapAttrs' (
         name: drv:

@@ -1,0 +1,110 @@
+name: External Builds
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  discover:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      matrix: ${{ steps.matrix.outputs.value }}
+      changed: ${{ steps.matrix.outputs.changed }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c
+      - id: matrix
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          expression='let
+            flake = builtins.getFlake (builtins.getEnv "CI_FLAKE");
+            jobs = flake.githubActions.external or { checks = {}; matrix.include = []; };
+          in map (entry: entry // {
+            drvPath = (builtins.getAttr entry.name (builtins.getAttr entry.system jobs.checks)).drvPath;
+          }) jobs.matrix.include'
+          current=$(CI_FLAKE="$PWD" nix eval --impure --json --no-update-lock-file --expr "$expression")
+          previous='[]'
+          if [[ -n "$BASE_SHA" && ! "$BASE_SHA" =~ ^0+$ ]]; then
+            git worktree add --detach "$RUNNER_TEMP/ci-base" "$BASE_SHA"
+            previous=$(CI_FLAKE="$RUNNER_TEMP/ci-base" nix eval --impure --json --no-update-lock-file --expr "$expression")
+          fi
+          matrix=$(jq -cn --argjson current "$current" --argjson previous "$previous" '
+            {include: [$current[] | . as $entry | select(any($previous[];
+              .name == $entry.name and .system == $entry.system and .drvPath == $entry.drvPath
+            ) | not)]}')
+          echo "value=$matrix" >> "$GITHUB_OUTPUT"
+          echo "changed=$(jq '.include | length > 0' <<< "$matrix")" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: discover
+    if: needs.discover.outputs.changed == 'true'
+    name: build (${{ matrix.system }}, ${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.discover.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: BRAINSia/free-disk-space@7048ffbf50819342ac964ef3998a51c2564a8a75
+        if: runner.os == 'Linux'
+        with:
+          tool-cache: false
+          mandb: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: false
+      - uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c
+      - uses: nix-community/cache-nix-action@b05e2d861a8d616a0cd4c91de03de22dfe447f57
+        with:
+          primary-key: external-v1-${{ matrix.system }}-${{ matrix.name }}-${{ github.sha }}
+          restore-prefixes-first-match: external-v1-${{ matrix.system }}-${{ matrix.name }}-
+          gc-max-store-size: 0
+      - env:
+          ATTRIBUTE: ${{ matrix.attr }}
+          CI_OUTPUT_DIR: ${{ runner.temp }}/product
+        run: |
+          set -euo pipefail
+          nix build --no-update-lock-file --out-link result-ci ".#$ATTRIBUTE"
+          mkdir -p "$CI_OUTPUT_DIR"
+          nix run --no-update-lock-file ".#$ATTRIBUTE"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ matrix.name }}-${{ matrix.system }}
+          path: ${{ runner.temp }}/product
+          if-no-files-found: error
+
+  required-result:
+    needs: [discover, build]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - env:
+          DISCOVERY: ${{ needs.discover.result }}
+          CHANGED: ${{ needs.discover.outputs.changed }}
+          BUILD: ${{ needs.build.result }}
+        run: |
+          test "$DISCOVERY" = success
+          case "$CHANGED" in
+            true) test "$BUILD" = success ;;
+            false) test "$BUILD" = skipped ;;
+            *) exit 1 ;;
+          esac
