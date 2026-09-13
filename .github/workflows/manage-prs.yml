@@ -1,0 +1,56 @@
+name: Maintain Ready Pull Requests
+
+on:
+  push:
+    branches: [unstable]
+  pull_request_target:
+    branches: [unstable]
+    types: [opened, reopened, synchronize, ready_for_review, edited]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: infra-lib-pr-maintenance
+  cancel-in-progress: false
+
+jobs:
+  maintain:
+    if: github.event_name != 'pull_request_target' || github.event.pull_request.user.login == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        id: bot
+        with:
+          app-id: ${{ vars.DEPENDENCY_APP_ID }}
+          private-key: ${{ secrets.DEPENDENCY_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - env:
+          GH_TOKEN: ${{ steps.bot.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          prs=$(gh pr list --base unstable --state open --author "$OWNER" \
+            --json number,isDraft,isCrossRepository \
+            --jq '.[] | select(.isDraft == false and .isCrossRepository == false) | .number')
+          failed=0
+          pattern='^(build|ci|feat|fix|perf|refactor|revert|style|test|chore)(\([^)]+\))?!?: .+$'
+          while IFS= read -r pr; do
+            [[ -n "$pr" ]] || continue
+            title=$(gh pr view "$pr" --json title --jq .title)
+            if [[ ! "$title" =~ $pattern || ${#title} -gt 72 ]]; then
+              echo "PR $pr needs a short semantic title" >&2
+              failed=1
+              continue
+            fi
+            if ! gh pr update-branch "$pr" --rebase; then
+              failed=1
+              continue
+            fi
+            gh pr merge "$pr" --auto --squash --subject "$title" --body '' || failed=1
+          done <<< "$prs"
+          exit "$failed"
