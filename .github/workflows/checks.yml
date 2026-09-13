@@ -64,7 +64,7 @@ jobs:
           echo "contracts=$contracts" >> "$GITHUB_OUTPUT"
 
   contracts:
-    needs: [fast-checks, discover-tests]
+    needs: [discover-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -82,7 +82,7 @@ jobs:
           done <<< "$checks"
 
   dependencies:
-    needs: [contracts, discover-tests]
+    needs: [fast-checks, contracts]
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -104,16 +104,12 @@ jobs:
         with:
           primary-key: drivers-v1-x86_64-linux-${{ hashFiles('flake.lock') }}-${{ github.sha }}
           restore-prefixes-first-match: drivers-v1-x86_64-linux-${{ hashFiles('flake.lock') }}-
-      - env:
-          TESTS: ${{ needs.discover-tests.outputs.vm }}
+      - name: Build shared service drivers
         run: |
           set -euo pipefail
-          checks=$(jq -er '.[]' <<< "$TESTS")
-          attributes=()
-          while IFS= read -r check; do
-            attributes+=(".#checks.x86_64-linux.$check.driver")
-          done <<< "$checks"
-          nix build --no-update-lock-file --out-link result-ci-driver "${attributes[@]}"
+          nix build --no-update-lock-file --out-link result-ci-driver \
+            .#checks.x86_64-linux.test-logs.driver \
+            .#checks.x86_64-linux.test-slurm-on-cephfs-job-roundtrip.driver
 
   vm-tests:
     needs: [discover-tests, dependencies]
