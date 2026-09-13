@@ -41,11 +41,10 @@ pkgs.testers.runNixOSTest {
 
     with subtest("all 4 output files exist with the right per-job payload"):
         for i, job_id in job_ids:
-            storage_c.wait_until_succeeds(
-                f"ls /mnt/ceph/concurrent-{i}-{job_id}.txt", timeout=180
-            )
-            v = storage_c.succeed(
-                f"cat /mnt/ceph/concurrent-{i}-{job_id}.txt"
+            v = storage_c.wait_until_succeeds(
+                f"test -s /mnt/ceph/concurrent-{i}-{job_id}.txt "
+                f"&& cat /mnt/ceph/concurrent-{i}-{job_id}.txt",
+                timeout=180,
             ).strip()
             assert v == f"payload-{i}", (
                 f"job {i} (job_id {job_id}) output corrupted: got {v!r}, "

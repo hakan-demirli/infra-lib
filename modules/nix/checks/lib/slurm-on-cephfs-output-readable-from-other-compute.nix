@@ -40,12 +40,14 @@ pkgs.testers.runNixOSTest {
 
     with subtest("output file appears on cephfs"):
         storage_c.wait_until_succeeds(
-            f"ls /mnt/ceph/cross-compute-{job_id}.txt", timeout=180
+            f"test -s /mnt/ceph/cross-compute-{job_id}.txt", timeout=180
         )
 
     with subtest("compute_2 (other node) reads same output via cephfs"):
         v = compute_2.wait_until_succeeds(
-            f"cat /mnt/ceph/cross-compute-{job_id}.txt", timeout=60
+            f"test -s /mnt/ceph/cross-compute-{job_id}.txt "
+            f"&& cat /mnt/ceph/cross-compute-{job_id}.txt",
+            timeout=60,
         ).strip()
         assert v == "from-compute-1", (
             f"compute_2 saw {v!r} instead of the expected output "

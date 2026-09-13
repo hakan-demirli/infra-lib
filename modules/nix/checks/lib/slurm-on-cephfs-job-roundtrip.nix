@@ -38,11 +38,10 @@ pkgs.testers.runNixOSTest {
         job_id = out.split()[-1]
 
     with subtest("output file appears on cephfs with expected content"):
-        storage_c.wait_until_succeeds(
-            f"ls /mnt/ceph/job-output-{job_id}.txt", timeout=180
-        )
-        v = storage_c.succeed(
-            f"cat /mnt/ceph/job-output-{job_id}.txt"
+        v = storage_c.wait_until_succeeds(
+            f"test -s /mnt/ceph/job-output-{job_id}.txt "
+            f"&& cat /mnt/ceph/job-output-{job_id}.txt",
+            timeout=180,
         ).strip()
         assert v == "cephfs-roundtrip-ok", (
             f"unexpected job output: {v!r}"
