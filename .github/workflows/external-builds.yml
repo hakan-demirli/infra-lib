@@ -42,7 +42,7 @@ jobs:
           fi
           matrix=$(jq -cn --argjson current "$current" --argjson previous "$previous" '
             {include: [$current[] | . as $entry | select(any($previous[];
-              .name == $entry.name and .system == $entry.system and .drvPath == $entry.drvPath
+              . == $entry
             ) | not)]}')
           echo "value=$matrix" >> "$GITHUB_OUTPUT"
           echo "changed=$(jq '.include | length > 0' <<< "$matrix")" >> "$GITHUB_OUTPUT"
