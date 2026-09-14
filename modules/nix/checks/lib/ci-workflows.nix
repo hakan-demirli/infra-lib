@@ -42,12 +42,14 @@ pkgs.runCommand "ci-workflows"
             executable.write_text("#!${pkgs.runtimeShell}\n" + script + "\n")
             executable.chmod(0o755)
 
-        original = {"name": "example", "system": "x86_64-linux", "drvPath": "/nix/store/old.drv"}
+        original = {"name": "example", "system": "x86_64-linux", "os": ["ubuntu-22.04"], "drvPath": "/nix/store/old.drv"}
         changed = original | {"drvPath": "/nix/store/new.drv"}
+        runner_changed = original | {"os": ["ubuntu-24.04"]}
         added = original | {"name": "another"}
         cases = [
             ([original], [original], [], "base", False),
             ([changed], [original], [changed], "base", False),
+            ([runner_changed], [original], [runner_changed], "base", False),
             ([original, added], [original], [added], "base", False),
             ([], [original], [], "base", False),
             ([original], [], [original], "base", False),
