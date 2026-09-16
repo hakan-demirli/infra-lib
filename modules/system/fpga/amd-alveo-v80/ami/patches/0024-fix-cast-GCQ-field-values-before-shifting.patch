@@ -1,0 +1,25 @@
+From c6dc52f856afb9f6a9ab69060da5a1101c440a58 Mon Sep 17 00:00:00 2001
+From: hakan-demirli <ehdemirli@proton.me>
+Date: Thu, 17 Sep 2026 01:20:00 +0200
+Subject: [PATCH] fix: cast GCQ field values before shifting
+
+---
+ driver/gcq-driver/src/gcq_regmap.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/driver/gcq-driver/src/gcq_regmap.h b/driver/gcq-driver/src/gcq_regmap.h
+index 247c556..d2e1422 100644
+--- a/driver/gcq-driver/src/gcq_regmap.h
++++ b/driver/gcq-driver/src/gcq_regmap.h
+@@ -78,7 +78,7 @@ static inline uint32_t prvulGetTrailingZeros( uint64_t ullValue )
+ #define BITS( h, l )                                            ( ( ( ( uint32_t )-1 ) - ( 1U << (l) ) + 1 ) & \
+                                                                 ( ( ( uint32_t )-1 ) >> ( BITS_PER_U32 - 1 - ( h ) ) ) )
+ #define FIELD_SHIFT( mask )                                     ( prvulGetTrailingZeros( mask ) )
+-#define FIELD_SET( mask, val )                                  ( ( ( val ) << FIELD_SHIFT( mask ) ) & ( mask ) )
++#define FIELD_SET( mask, val )                                  ( ( ( ( uint32_t )( val ) ) << FIELD_SHIFT( mask ) ) & ( mask ) )
+ #define FIELD_GET( mask, reg )                                  ( ( ( reg ) & ( mask ) ) >> FIELD_SHIFT( mask ) )
+ 
+ #define GCQ_INTERRUPT_CTRL_DISABLE                              ( 0x0 )
+-- 
+2.55.0
+

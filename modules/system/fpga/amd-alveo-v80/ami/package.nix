@@ -57,6 +57,7 @@ stdenv.mkDerivation (finalAttrs: {
     patch -p1 < ${./patches/0021-fix-retry-inaccessible-GCQ-registers.patch}
     patch -p1 < ${./patches/0022-fix-report-critical-sensors-without-SIGBUS.patch}
     patch -p1 < ${./patches/0023-fix-tolerate-inaccessible-idle-GCQ-polls.patch}
+    patch -p1 < ${./patches/0024-fix-cast-GCQ-field-values-before-shifting.patch}
   '';
 
   buildPhase = ''
