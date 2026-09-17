@@ -46,6 +46,7 @@ let
     (libRoot + "/modules/common/cluster-users.nix")
     (libRoot + "/modules/common/deployment-role-secrets.nix")
     (libRoot + "/modules/common/host-disko.nix")
+    (libRoot + "/modules/common/btrfs-scrub.nix")
     (libRoot + "/modules/common/node-exporter.nix")
     (libRoot + "/modules/common/smartctl-exporter.nix")
     (libRoot + "/modules/common/ipmi-exporter.nix")
