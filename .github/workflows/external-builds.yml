@@ -22,7 +22,7 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      - uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c
+      - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25
       - id: matrix
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
@@ -71,11 +71,11 @@ jobs:
           large-packages: true
           docker-images: true
           swap-storage: false
-      - uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c
+      - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25
       - uses: nix-community/cache-nix-action@b05e2d861a8d616a0cd4c91de03de22dfe447f57
         with:
-          primary-key: external-v1-${{ matrix.system }}-${{ matrix.name }}-${{ github.sha }}
-          restore-prefixes-first-match: external-v1-${{ matrix.system }}-${{ matrix.name }}-
+          primary-key: external-v2-${{ matrix.system }}-${{ matrix.name }}-${{ github.sha }}
+          restore-prefixes-first-match: external-v2-${{ matrix.system }}-${{ matrix.name }}-
           gc-max-store-size: 0
       - env:
           ATTRIBUTE: ${{ matrix.attr }}
