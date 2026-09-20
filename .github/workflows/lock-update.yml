@@ -31,17 +31,17 @@ jobs:
           ref: unstable
           token: ${{ steps.bot.outputs.token }}
       - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25
-      - run: nix flake update nixpkgs
+      - run: nix flake update
       - uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1
         id: update
         with:
           token: ${{ steps.bot.outputs.token }}
           base: unstable
-          branch: automation/update-nixpkgs
+          branch: automation/update-flake-inputs
           add-paths: flake.lock
           delete-branch: true
-          commit-message: 'chore: update nixpkgs'
-          title: 'chore: update nixpkgs'
+          commit-message: 'chore: update flake inputs'
+          title: 'chore: update flake inputs'
           body: ''
       - if: steps.update.outputs.pull-request-operation == 'created' || steps.update.outputs.pull-request-operation == 'updated'
         env:
@@ -50,4 +50,4 @@ jobs:
         run: |
           set -euo pipefail
           test "$(gh pr diff "$PR" --name-only)" = flake.lock
-          gh pr merge "$PR" --auto --squash --subject 'chore: update nixpkgs' --body ''
+          gh pr merge "$PR" --auto --squash --subject 'chore: update flake inputs' --body ''
