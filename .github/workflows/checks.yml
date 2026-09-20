@@ -20,11 +20,11 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-      - uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c
+      - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25
       - uses: nix-community/cache-nix-action@b05e2d861a8d616a0cd4c91de03de22dfe447f57
         with:
-          primary-key: eval-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
-          restore-prefixes-first-match: eval-v2-${{ runner.os }}-${{ runner.arch }}-
+          primary-key: eval-v3-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
+          restore-prefixes-first-match: eval-v3-${{ runner.os }}-${{ runner.arch }}-
           gc-max-store-size: 1G
       - id: matrix
         run: |
@@ -45,11 +45,11 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-      - uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c
+      - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25
       - uses: nix-community/cache-nix-action@b05e2d861a8d616a0cd4c91de03de22dfe447f57
         with:
-          primary-key: build-v2-${{ matrix.system }}-${{ matrix.name }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
-          restore-prefixes-first-match: build-v2-${{ matrix.system }}-${{ matrix.name }}-
+          primary-key: build-v3-${{ matrix.system }}-${{ matrix.name }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
+          restore-prefixes-first-match: build-v3-${{ matrix.system }}-${{ matrix.name }}-
           gc-max-store-size: 0
       - env:
           ATTRIBUTE: ${{ matrix.attr }}
