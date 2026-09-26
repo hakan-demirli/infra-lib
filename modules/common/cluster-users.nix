@@ -9,14 +9,7 @@
 with lib;
 let
   hid = host.id;
-  grants = cluster.usersOnHost.${hid} or [ ];
-
-  unixTierFor =
-    tid:
-    cluster.unixAccessTiers.${tid} or (throw ''
-      cluster-users: host '${hid}' has a grant referencing Unix tier '${tid}' but no such tier is declared.
-      Known tiers: ${concatStringsSep ", " (attrNames cluster.unixAccessTiers)}.
-    '');
+  accounts = (import ../lib/accounts.nix { inherit lib; }).onHost cluster hid;
 
   shellPkg =
     s:
@@ -31,8 +24,6 @@ let
     else
       pkgs.bashInteractive;
 
-  allowedOnThisHost = u: elem "all" u.allowed_hosts || elem hid u.allowed_hosts;
-
   hostSshTrust = host.ssh_trust or { };
   extraTrustedKeysFor =
     target:
@@ -42,57 +33,18 @@ let
     in
     concatLists (map keysFromUid uids);
 
-  visibleGrants = filter (
-    g:
-    cluster.users ? ${g.user}
-    && cluster.users.${g.user}.system_account != null
-    && !(cluster.users.${g.user}.archived or false)
-    && allowedOnThisHost cluster.users.${g.user}
-  ) grants;
-
-  grantsByUser = foldl' (
-    acc: g:
-    let
-      uid = g.user;
-    in
-    acc // { ${uid} = (acc.${uid} or [ ]) ++ [ g ]; }
-  ) { } visibleGrants;
-
-  effectiveTier =
-    userGrants:
-    let
-      tierIds = unique (map (g: g.unix_tier) userGrants);
-      tierId =
-        if length tierIds == 1 then
-          head tierIds
-        else
-          throw "cluster-users: host '${hid}' resolved conflicting Unix tiers: ${concatStringsSep ", " tierIds}";
-      tier = unixTierFor tierId;
-    in
-    {
-      inherit (tier) groups root_ssh;
-      sudoRule = tier.sudo.extra_rule;
-      sshAllowed = tier.ssh.allowed;
-    };
-
   mkUserEntry =
-    uid: userGrants:
+    uid: entry:
     let
       u = cluster.users.${uid};
-      sa = u.system_account;
-      eff = effectiveTier userGrants;
-      extraGroupsList = unique (concatLists [
-        sa.groups
-        eff.groups
-      ]);
-      homeDir = "/home/${sa.username}";
+      sa = entry.account;
     in
     nameValuePair sa.username {
       isNormalUser = true;
       inherit (sa) uid;
-      home = homeDir;
+      home = "/home/${sa.username}";
       shell = shellPkg sa.shell;
-      extraGroups = extraGroupsList;
+      extraGroups = entry.groups;
       openssh.authorizedKeys.keys = unique (u.keys.ssh ++ extraTrustedKeysFor sa.username);
       allowedHosts = u.allowed_hosts;
       inherit (u) cohort;
@@ -100,50 +52,29 @@ let
       inherit (u) expires;
     };
 
-  userEntries = mapAttrs' mkUserEntry grantsByUser;
+  userEntries = mapAttrs' mkUserEntry accounts;
 
   sudoLines = concatLists (
     mapAttrsToList (
-      uid: userGrants:
-      let
-        u = cluster.users.${uid};
-        sa = u.system_account;
-        eff = effectiveTier userGrants;
-      in
-      optional (eff.sudoRule != null) "${sa.username} ALL=(ALL) ${eff.sudoRule}"
-    ) grantsByUser
+      _: entry:
+      optional (
+        entry.tier.sudo.extra_rule != null
+      ) "${entry.account.username} ALL=(ALL) ${entry.tier.sudo.extra_rule}"
+    ) accounts
   );
 
-  usersDeniedSsh = mapAttrsToList (_uid: _grants: _uid) (
-    filterAttrs (
-      uid: userGrants:
-      let
-        u = cluster.users.${uid};
-        sa = u.system_account;
-        eff = effectiveTier userGrants;
-      in
-      sa != null && !eff.sshAllowed
-    ) grantsByUser
+  deniedUsernames = map (entry: entry.account.username) (
+    filter (entry: !entry.tier.ssh.allowed) (attrValues accounts)
   );
-
-  deniedUsernames = map (uid: cluster.users.${uid}.system_account.username) usersDeniedSsh;
 
   rootAuthorizedKeys = unique (
     concatLists (
-      mapAttrsToList (
-        uid: userGrants:
-        let
-          user = cluster.users.${uid};
-        in
-        if (effectiveTier userGrants).root_ssh && allowedOnThisHost user then user.keys.ssh else [ ]
-      ) grantsByUser
+      mapAttrsToList (uid: entry: optionals entry.tier.root_ssh cluster.users.${uid}.keys.ssh) accounts
     )
     ++ extraTrustedKeysFor "root"
   );
 
-  shellsToEnable = unique (
-    mapAttrsToList (uid: _: cluster.users.${uid}.system_account.shell) grantsByUser
-  );
+  shellsToEnable = unique (mapAttrsToList (_: entry: entry.account.shell) accounts);
 in
 {
   options = {

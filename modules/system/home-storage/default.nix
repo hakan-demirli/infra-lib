@@ -12,14 +12,13 @@ let
     && (hostImpermanence.enable or false)
     && (hostImpermanence.home_mode or "persist-all") == "user-managed";
 
-  grants = if host == null then [ ] else (cluster.usersOnHost.${host.id} or [ ]);
-  eligibleGrants = lib.filter (
-    grant:
-    (cluster.users.${grant.user} or null) != null
-    && cluster.users.${grant.user}.system_account != null
-    && !(cluster.users.${grant.user}.archived or false)
-  ) grants;
-  eligibleUsers = map (grant: cluster.users.${grant.user}.system_account) eligibleGrants;
+  eligibleUsers =
+    if host == null then
+      [ ]
+    else
+      map (entry: entry.account) (
+        lib.attrValues ((import ../../lib/accounts.nix { inherit lib; }).onHost cluster host.id)
+      );
 
   persistentRoot = "/persist/home";
   temporaryRoot = "/volatile/home";

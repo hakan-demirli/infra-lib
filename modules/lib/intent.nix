@@ -16,6 +16,7 @@ let
     hostsWithSlurmClient
     ;
 
+  accounts = import ./accounts.nix { inherit lib; };
   activeClusters = filterAttrs (_: c: c.state != "retired") clusters;
   isActiveUser = uid: users ? ${uid} && !(users.${uid}.archived or false);
 
@@ -353,38 +354,23 @@ let
     in
     any (r: srcMatches r && dstMatches r) aclRules;
 
-  userAllowedOnHost =
-    uid: hid:
-    let
-      u = users.${uid} or null;
-    in
-    u != null && (elem "all" u.allowed_hosts || elem hid u.allowed_hosts);
-
-  clusterAccountGrants = concatLists (
+  validAccountGrants = concatLists (
     map (
       hid:
-      let
-        grants = filter (g: userAllowedOnHost g.user hid) (inventory.usersOnHost.${hid} or [ ]);
-      in
-      map (
-        g:
-        let
-          u = users.${g.user} or null;
-          sa = if u == null then null else u.system_account;
-        in
-        {
-          inherit (g) user;
-          host = hid;
-          account = if sa == null then null else sa.username;
-          inherit (g) unix_tier;
-          source = if g.via_team == null then "user-grant" else "team:${g.via_team}";
-          archived = if u == null then true else u.archived;
-        }
-      ) grants
+      concatLists (
+        mapAttrsToList (
+          _: entry:
+          map (grant: {
+            inherit (grant) user unix_tier;
+            host = hid;
+            account = entry.account.username;
+            source = if grant.via_team == null then "user-grant" else "team:${grant.via_team}";
+            archived = false;
+          }) entry.grants
+        ) (accounts.onHost inventory hid)
+      )
     ) (attrNames hosts)
   );
-
-  validAccountGrants = filter (g: g.account != null && !g.archived) clusterAccountGrants;
 
   tierRootGrants =
     map

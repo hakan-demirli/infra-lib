@@ -8,6 +8,7 @@
 {
   inventory-validation = import ./inventory-validation.nix { inherit pkgs self; };
   intent-account-scope = import ./intent-account-scope.nix { inherit pkgs self; };
+  accounts = import ./accounts.nix { inherit pkgs self; };
   deployment-role-secrets = import ./deployment-role-secrets.nix { inherit pkgs self; };
   disko-wiring = import ./disko-wiring.nix { inherit pkgs self; };
   disko-installer-contract = import ./disko-installer-contract.nix { inherit pkgs self; };
@@ -83,6 +84,7 @@
     inherit pkgs self inputs;
   };
   hardware-health = import ./hardware-health.nix { inherit pkgs self inputs; };
+  user-unit-metrics = import ./user-unit-metrics.nix { inherit pkgs; };
   slurm-metrics = import ./slurm-metrics.nix { inherit pkgs self inputs; };
   cephfs-replicated-read-cross-client = import ./cephfs-replicated-read-cross-client.nix {
     pkgs = cephPkgs;

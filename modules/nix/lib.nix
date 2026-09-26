@@ -9,6 +9,8 @@ let
 
   mkTypes = { lib }: import (libDir + "/types.nix") { inherit lib; };
 
+  mkAccounts = { lib }: import (libDir + "/accounts.nix") { inherit lib; };
+
   mkInventory =
     {
       lib,
@@ -155,6 +157,7 @@ in
     inherit
       hujson
       headscalePolicy
+      mkAccounts
       mkInventory
       mkCodegen
       mkIntent
