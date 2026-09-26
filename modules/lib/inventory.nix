@@ -6,6 +6,7 @@
 with lib;
 let
   root = self + "/inventory";
+  accounts = import ./accounts.nix { inherit lib; };
 
   argsModule = {
     _module.args = { inherit lib; };
@@ -815,6 +816,33 @@ let
         "cluster '${c.id}' gives user '${uid}' conflicting Unix tiers: ${concatStringsSep ", " (unique tiers)}"
     ) byUser;
 
+  clusterSingleUserRoot =
+    c:
+    let
+      owningTeam = if c.ownership.team == null then null else teams.${c.ownership.team} or null;
+      owners =
+        optional (c.ownership.owner != null) c.ownership.owner
+        ++ optionals (owningTeam != null) (
+          map (member: member.user) (filter (member: member.role == "admin") owningTeam.members)
+        );
+      grantsRoot =
+        grant:
+        let
+          account = (users.${grant.user} or { system_account = null; }).system_account;
+        in
+        unixAccessTiers ? ${grant.unix_tier}
+        && accounts.tierGrantsRoot unixAccessTiers.${grant.unix_tier} (
+          if account == null then [ ] else account.groups
+        );
+      nonOwners = unique (
+        map (grant: grant.user) (
+          filter (grant: grantsRoot grant && !elem grant.user owners) (usersOnCluster c.id)
+        )
+      );
+    in
+    optional (c.kind == "single-user" && nonOwners != [ ])
+      "cluster '${c.id}' is single-user but grants root-capable Unix tiers to non-owners: ${concatStringsSep ", " nonOwners}";
+
   clusterNetworkRefs =
     c:
     concatLists [
@@ -1029,6 +1057,7 @@ let
     (mapAttrsToList (_: clusterSchedulerRefs) explicitClusters)
     (mapAttrsToList (_: clusterAccessRefs) explicitClusters)
     (mapAttrsToList (_: clusterUnixTierConflicts) explicitClusters)
+    (mapAttrsToList (_: clusterSingleUserRoot) explicitClusters)
     (mapAttrsToList (_: clusterNetworkRefs) explicitClusters)
     (mapAttrsToList (_: clusterFsContract) explicitClusters)
     (mapAttrsToList (_: clusterParentRef) explicitClusters)

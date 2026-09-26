@@ -79,6 +79,56 @@ let
     }
   '';
 
+  unixTierWithGroups =
+    id: groups:
+    lib.replaceStrings
+      [ "groups = [ ];" ]
+      [
+        "groups = [ ${lib.concatMapStringsSep " " (group: ''"${group}"'') groups} ];"
+      ]
+      (validUnixTier id);
+
+  clusterAccessFiles =
+    {
+      kind,
+      tier,
+      ownership ? ''owner = "cluster-owner";'',
+    }:
+    {
+      "users/cluster-owner.nix" = validUser "cluster-owner";
+      "users/cluster-guest.nix" = validUser "cluster-guest";
+      "unix-access-tiers/root.nix" = unixTierWithGroups "root" [ "wheel" ];
+      "unix-access-tiers/container.nix" = unixTierWithGroups "container" [ "docker" ];
+      "unix-access-tiers/plain.nix" = validUnixTier "plain";
+      "teams/owners.nix" = ''
+        {
+          id = "owners";
+          members = [
+            {
+              user = "cluster-guest";
+              role = "admin";
+            }
+          ];
+        }
+      '';
+      "clusters/c-access.nix" = ''
+        {
+          id = "c-access";
+          kind = "${kind}";
+          ownership = {
+            class = "personal";
+            ${ownership}
+          };
+          access.users = [
+            {
+              user = "cluster-guest";
+              unix_tier = "${tier}";
+            }
+          ];
+        }
+      '';
+    };
+
   validHost = id: extra: ''
     {
       id = "${id}";
@@ -585,6 +635,52 @@ let
           root_ssh = true;
         }
       '';
+    };
+
+    single-user-cluster-rejects-root-for-non-owners = {
+      desc = "a single-user cluster cannot grant a sudo tier to a non-owner";
+      expectFail = true;
+      files = clusterAccessFiles {
+        kind = "single-user";
+        tier = "root";
+      };
+    };
+
+    single-user-cluster-rejects-root-equivalent-groups = {
+      desc = "a single-user cluster treats root-equivalent groups as root";
+      expectFail = true;
+      files = clusterAccessFiles {
+        kind = "single-user";
+        tier = "container";
+      };
+    };
+
+    single-user-cluster-allows-unprivileged-non-owners = {
+      desc = "a single-user cluster may grant an unprivileged tier to a non-owner";
+      expectFail = false;
+      files = clusterAccessFiles {
+        kind = "single-user";
+        tier = "plain";
+      };
+    };
+
+    single-user-cluster-allows-root-for-owning-team-admins = {
+      desc = "admins of the owning team may hold root in a single-user cluster";
+      expectFail = false;
+      files = clusterAccessFiles {
+        kind = "single-user";
+        tier = "root";
+        ownership = ''team = "owners";'';
+      };
+    };
+
+    shared-cluster-allows-root-for-non-owners = {
+      desc = "a shared cluster may grant root to users outside the owning team";
+      expectFail = false;
+      files = clusterAccessFiles {
+        kind = "shared";
+        tier = "root";
+      };
     };
 
     scheduler-none-rejects-slurm-payload = {

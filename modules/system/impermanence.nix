@@ -71,11 +71,9 @@ let
   validSystemPath = path: path != "" && isAbsolute path && !hasTraversal path;
   validUserPath = path: isRelative path && !hasTraversal path;
 
-  grants = cluster.usersOnHost.${host.id} or [ ];
-  eligibleGrants = lib.filter (
-    g: (cluster.users.${g.user} or null) != null && cluster.users.${g.user}.system_account != null
-  ) grants;
-  eligibleUsers = map (g: cluster.users.${g.user}.system_account) eligibleGrants;
+  eligibleUsers = map (entry: entry.account) (
+    lib.attrValues ((import ../lib/accounts.nix { inherit lib; }).onHost cluster host.id)
+  );
 
   preparePersistentHostIdentity = pkgs.writeShellApplication {
     name = "prepare-persistent-host-identity";
