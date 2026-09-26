@@ -1,12 +1,10 @@
 {
   config,
   lib,
-  utils,
   ...
 }:
 let
   enabled = (config.fileSystems."/".fsType or "") == "btrfs";
-  unit = "btrfs-scrub-${utils.escapeSystemdPath "/"}";
 in
 {
   config = lib.mkIf enabled {
@@ -16,9 +14,9 @@ in
       fileSystems = [ "/" ];
     };
 
-    systemd.timers.${unit}.timerConfig.AccuracySec = lib.mkForce "10m";
+    systemd.timers."btrfs-scrub@".timerConfig.AccuracySec = lib.mkForce "10m";
 
-    systemd.services.${unit}.unitConfig.ConditionACPower = true;
+    systemd.services."btrfs-scrub@".unitConfig.ConditionACPower = true;
 
     system.impermanence.persistentDirs = [ "/var/lib/btrfs" ];
   };
