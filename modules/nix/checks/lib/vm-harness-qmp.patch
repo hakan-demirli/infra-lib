@@ -1,0 +1,133 @@
+--- a/test_driver/machine/__init__.py
++++ b/test_driver/machine/__init__.py
+@@ -1372,7 +1372,7 @@
+ 
+         monitor_socket = create_socket(clear(self.monitor_path))
+         shell_socket = create_socket(clear(self.shell_path))
+-        self.process = self.start_command.run(
++        process = self.start_command.run(
+             self.state_dir,
+             self.shared_dir,
+             self.monitor_path,
+@@ -1382,6 +1382,7 @@
+             self.efi_vars_path,
+             self.vsock_guest,
+         )
++        self.process = process
+ 
+         def accept_or_fail(sock: socket.socket, name: str) -> socket.socket:
+             """Accept a connection on a socket, polling the status to check
+@@ -1405,7 +1406,17 @@
+ 
+         self.monitor = accept_or_fail(monitor_socket, "monitor")
+         self.shell = accept_or_fail(shell_socket, "shell")
+-        self.qmp_client = QMPSession.from_path(self.qmp_path)
++        try:
++            self.qmp_client = QMPSession.from_path(
++                self.qmp_path, is_alive=lambda: process.poll() is None
++            )
++        except (ConnectionError, TimeoutError) as e:
++            process.kill()
++            output = b""
++            if process.stdout:
++                os.set_blocking(process.stdout.fileno(), False)
++                output = process.stdout.read() or b""
++            raise MachineError(f"{e}.\n{output.decode(errors='ignore')}") from e
+ 
+         # Store last serial console lines for use
+         # of wait_for_console_text
+--- a/test_driver/machine/qmp.py
++++ b/test_driver/machine/qmp.py
+@@ -2,8 +2,10 @@
+ import json
+ import logging
+ import os
++import select
+ import socket
+-from collections.abc import Iterator
++import time
++from collections.abc import Callable, Iterator
+ from pathlib import Path
+ from queue import Queue
+ from typing import Any
+@@ -29,15 +31,21 @@
+ 
+ 
+ class QMPSession:
+-    def __init__(self, sock: socket.socket) -> None:
++    def __init__(
++        self,
++        sock: socket.socket,
++        is_alive: Callable[[], bool] = lambda: True,
++        greeting_timeout: dt.timedelta = dt.timedelta(minutes=5),
++    ) -> None:
+         self.sock = sock
++        self.is_alive = is_alive
+         self.results: Queue[dict[str, str]] = Queue()
+         self.pending_events: Queue[dict[str, Any]] = Queue()
+         self.reader = sock.makefile("r")
+         self.writer = sock.makefile("w")
+         # Make the reader non-blocking so we can kind of select on it.
+         os.set_blocking(self.reader.fileno(), False)
+-        hello = self._wait_for_new_result()
++        hello = self._wait_for_new_result(greeting_timeout)
+         logger.debug(f"Got greeting from QMP API: {hello}")
+         # The greeting message format is:
+         # { "QMP": { "version": json-object, "capabilities": json-array } }
+@@ -45,24 +53,42 @@
+         self.send("qmp_capabilities")
+ 
+     @classmethod
+-    def from_path(cls, path: Path) -> "QMPSession":
++    def from_path(
++        cls, path: Path, is_alive: Callable[[], bool] = lambda: True
++    ) -> "QMPSession":
+         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+         sock.connect(str(path))
+-        return cls(sock)
++        return cls(sock, is_alive)
+ 
+     def close(self) -> None:
+         self.sock.close()
+ 
+-    def _wait_for_new_result(self) -> dict[str, str]:
++    def _wait_for_new_result(
++        self, timeout: dt.timedelta | None = None
++    ) -> dict[str, str]:
+         assert self.results.empty(), "Results set is not empty, missed results!"
++        deadline = (
++            None if timeout is None else time.monotonic() + timeout.total_seconds()
++        )
+         while self.results.empty():
+-            self.read_pending_messages()
++            if self.read_pending_messages():
++                continue
++            self._wait_readable(deadline)
++            if not self.read_pending_messages():
++                raise ConnectionError("QEMU closed its QMP socket")
+         return self.results.get()
+ 
+-    def read_pending_messages(self) -> None:
++    def _wait_readable(self, deadline: float | None) -> None:
++        while not select.select([self.reader], [], [], 1.0)[0]:
++            if not self.is_alive():
++                raise ConnectionError("QEMU exited before answering on its QMP socket")
++            if deadline is not None and time.monotonic() > deadline:
++                raise TimeoutError("QEMU did not answer on its QMP socket in time")
++
++    def read_pending_messages(self) -> bool:
+         line = self.reader.readline()
+         if not line:
+-            return
++            return False
+         evt_or_result = json.loads(line)
+         logger.debug(f"Received a message: {evt_or_result}")
+ 
+@@ -74,6 +100,7 @@
+             self.pending_events.put(evt_or_result)
+         else:
+             raise QMPAPIError(evt_or_result)
++        return True
+ 
+     def wait_for_event(
+         self, timeout: dt.timedelta = dt.timedelta(seconds=10)
