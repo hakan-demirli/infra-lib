@@ -47,6 +47,7 @@ let
     (libRoot + "/modules/common/deployment-role-secrets.nix")
     (libRoot + "/modules/common/host-disko.nix")
     (libRoot + "/modules/common/btrfs-scrub.nix")
+    (libRoot + "/modules/common/cpu-microcode.nix")
     (libRoot + "/modules/common/node-exporter.nix")
     (libRoot + "/modules/common/auto-upgrade.nix")
     (libRoot + "/modules/common/smartctl-exporter.nix")

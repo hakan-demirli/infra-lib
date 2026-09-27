@@ -78,6 +78,12 @@ let
   isRelative = path: path != "" && !isAbsolute path;
   hasTraversal = path: lib.any (part: part == "." || part == "..") (lib.splitString "/" path);
   validSystemPath = path: path != "" && isAbsolute path && !hasTraversal path;
+  alreadyPersistent =
+    path:
+    lib.any (root: path == root || lib.hasPrefix "${root}/" path) [
+      "/persist"
+      "/nix"
+    ];
   validUserPath = path: isRelative path && !hasTraversal path;
 
   eligibleUsers = map (entry: entry.account) (
@@ -228,7 +234,7 @@ in
     persistentDirs = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [ ];
-      description = "Extra system-side directories to persist (e.g. /var/lib/libvirt, /persist/xilinx).";
+      description = "Extra system-side directories to persist (e.g. /var/lib/libvirt).";
     };
 
     persistentUserDirs = lib.mkOption {
@@ -293,6 +299,12 @@ in
         {
           assertion = lib.all validSystemPath (systemPaths ++ systemFiles);
           message = "host '${host.id}': system persistence paths must be normalized absolute paths without '.' or '..' components.";
+        }
+        {
+          assertion = !lib.any alreadyPersistent (systemPaths ++ systemFiles);
+          message = "host '${host.id}': paths under /persist and /nix are already persistent; persisting them again mounts an empty copy over them: ${
+            lib.concatStringsSep ", " (lib.filter alreadyPersistent (systemPaths ++ systemFiles))
+          }";
         }
         {
           assertion = lib.all validUserPath (userDirs ++ userFiles);

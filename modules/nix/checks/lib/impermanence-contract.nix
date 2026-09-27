@@ -99,6 +99,12 @@ let
   duplicateDefaultDirectory = evalImpermanence {
     host = mkHost { persistedPaths = [ "/var/lib/nixos" ]; };
   };
+  persistentDirectory = evalImpermanence {
+    host = mkHost { persistedPaths = [ "/persist/xilinx" ]; };
+  };
+  storeFile = evalImpermanence {
+    host = mkHost { persistedFiles = [ "/nix/var/example" ]; };
+  };
   selective = evalImpermanence {
     host = mkHost { homeMode = "selective"; };
     extraModule.system.impermanence.persistentUserDirs = [ "Documents" ];
@@ -187,6 +193,8 @@ let
     malformed-system-path-fails = hasFailure "normalized absolute paths" malformedPath;
     duplicate-default-file-fails = hasFailure "duplicate system persistence file" duplicateDefaultFile;
     duplicate-default-directory-fails = hasFailure "duplicate system persistence directory" duplicateDefaultDirectory;
+    persistent-directory-fails = hasFailure "already persistent" persistentDirectory;
+    store-file-fails = hasFailure "already persistent" storeFile;
     host-identity-is-persistent =
       lib.elem "/etc/machine-id" persistedSystemFiles
       && lib.elem "/var/lib/systemd/credential.secret" persistedSystemFiles;
