@@ -8,6 +8,13 @@ let
 in
 {
   options.services.cluster-harmonia = {
+    firewallInterface = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      example = "tailscale0";
+      description = "Interface that may reach the cache. Null opens the port on every interface.";
+    };
+
     signKey = {
       source = lib.mkOption {
         type = lib.types.enum [
@@ -60,7 +67,11 @@ in
           settings.bind = "[::]:5101";
         };
 
-        networking.firewall.allowedTCPPorts = [ 5101 ];
+        networking.firewall =
+          if cfg.firewallInterface == null then
+            { allowedTCPPorts = [ 5101 ]; }
+          else
+            { interfaces.${cfg.firewallInterface}.allowedTCPPorts = [ 5101 ]; };
       }
 
       (lib.mkIf useSops {

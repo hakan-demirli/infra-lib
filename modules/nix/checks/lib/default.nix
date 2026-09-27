@@ -13,6 +13,10 @@
   disko-wiring = import ./disko-wiring.nix { inherit pkgs self; };
   disko-installer-contract = import ./disko-installer-contract.nix { inherit pkgs self; };
   boot-policy = import ./boot-policy.nix { inherit pkgs self inputs; };
+  boot-assessment = import ./boot-assessment.nix { inherit pkgs self; };
+  fleet-upgrade = import ./fleet-upgrade.nix { inherit pkgs self; };
+  slurm-switch-keeps-jobs = import ./slurm-switch-keeps-jobs.nix { inherit pkgs; };
+  fleet-deploy-controller = import ./fleet-deploy-controller.nix { inherit pkgs self inputs; };
   ci-workflows = import ./ci-workflows.nix { inherit pkgs; };
   impermanence-contract = import ./impermanence-contract.nix {
     inherit pkgs self inputs;

@@ -50,7 +50,10 @@ let
   };
   revisionCollector = pkgs.writeShellApplication {
     name = "collect-fleet-revisions";
-    runtimeInputs = [ pkgs.coreutils ];
+    runtimeInputs = [
+      pkgs.coreutils
+      pkgs.diffutils
+    ];
     text = ''
       mkdir -p ${metricsDirectory}
       output="$(mktemp ${metricsDirectory}/fleet-revisions.prom.XXXXXX)"
@@ -72,12 +75,38 @@ let
         *) systemRevisionKind="git" ;;
       esac
       systemVersion="$(/run/current-system/sw/bin/nixos-version --short)"
+      systemActivatedAt="$(stat -c %Y /run/current-system)"
+
+      bootComponentChanged() {
+        local component=$1
+        if [[ $component == kernel-params ]]; then
+          if cmp -s "/run/booted-system/$component" "/run/current-system/$component"; then
+            return 1
+          fi
+        else
+          [[ "$(readlink -f "/run/booted-system/$component")" != "$(readlink -f "/run/current-system/$component")" ]]
+        fi
+      }
 
       {
         printf '%s\n' '# HELP fleet_nixos_system_info Active NixOS system generation and source revision.'
         printf '%s\n' '# TYPE fleet_nixos_system_info gauge'
         printf 'fleet_nixos_system_info{host="%s",generation="%s",revision="%s",revision_kind="%s",version="%s",closure="%s"} 1\n' \
           ${lib.escapeShellArg host.id} "$systemGeneration" "$systemRevision" "$systemRevisionKind" "$systemVersion" "$systemClosure"
+        printf '%s\n' '# HELP fleet_nixos_system_activation_timestamp_seconds When the active NixOS generation was activated.'
+        printf '%s\n' '# TYPE fleet_nixos_system_activation_timestamp_seconds gauge'
+        printf 'fleet_nixos_system_activation_timestamp_seconds{host="%s"} %s\n' \
+          ${lib.escapeShellArg host.id} "$systemActivatedAt"
+        printf '%s\n' '# HELP fleet_nixos_reboot_required Boot component of the active generation that only takes effect after a reboot.'
+        printf '%s\n' '# TYPE fleet_nixos_reboot_required gauge'
+        for component in kernel initrd kernel-modules kernel-params; do
+          required=0
+          if bootComponentChanged "$component"; then
+            required=1
+          fi
+          printf 'fleet_nixos_reboot_required{host="%s",component="%s"} %s\n' \
+            ${lib.escapeShellArg host.id} "$component" "$required"
+        done
         printf '%s\n' '# HELP fleet_home_manager_generation_info Active standalone Home Manager generation.'
         printf '%s\n' '# TYPE fleet_home_manager_generation_info gauge'
 

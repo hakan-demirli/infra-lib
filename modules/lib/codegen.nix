@@ -231,10 +231,14 @@ in
       fleetAdminTag = "tag:fleet-admin-client";
       metricsTag = "tag:metrics";
       nixCacheTag = "tag:nix-binary-cache";
+      deployControllerTag = "tag:fleet-deploy-controller";
+      inherit (inventory) deployController;
       fleetServicePorts = {
         logs = 9428;
         nixCache = 5101;
         inbox = 873;
+        deployPlan = 5102;
+        metricsQuery = 8428;
       };
       adminClientHosts = filter (
         h:
@@ -333,6 +337,9 @@ in
         }
         // optionalAttrs hasAdminClients {
           ${fleetAdminTag} = [ "group:admin" ];
+        }
+        // optionalAttrs (deployController != null) {
+          ${deployControllerTag} = [ "group:admin" ];
         };
 
       adminRule = {
@@ -382,6 +389,32 @@ in
           dst = [ "${controllerTag}:${toString fleetServicePorts.nixCache}" ];
         }
       ) (attrNames activeClusters);
+
+      deployRules = optionals (deployController != null) (
+        [
+          {
+            action = "accept";
+            src = [ metricsTag ];
+            dst = [ "${deployControllerTag}:${toString fleetServicePorts.deployPlan}" ];
+          }
+          {
+            action = "accept";
+            src = [ nixCacheTag ];
+            dst = [ "${deployControllerTag}:${toString fleetServicePorts.nixCache}" ];
+          }
+        ]
+        ++ concatMap (
+          cid:
+          let
+            controllerTag = controllerTagOf cid;
+          in
+          optional (controllerTag != null) {
+            action = "accept";
+            src = [ deployControllerTag ];
+            dst = [ "${controllerTag}:${toString fleetServicePorts.metricsQuery}" ];
+          }
+        ) (attrNames activeClusters)
+      );
 
       inboxRules = concatMap (
         cid:
@@ -566,6 +599,7 @@ in
       ++ logsRules
       ++ nixCacheRules
       ++ inboxRules
+      ++ deployRules
       ++ computeMeshRules
       ++ loginToComputeRules
       ++ computeToStorageRules

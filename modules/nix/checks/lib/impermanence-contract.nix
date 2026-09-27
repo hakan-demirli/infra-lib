@@ -143,6 +143,14 @@ let
           ];
     };
   };
+  slurmController = evalImpermanence {
+    extraModule.services.slurm.server.enable = true;
+  };
+  systemDirectoryPaths =
+    evaluated:
+    map (
+      directory: directory.dirPath
+    ) evaluated.config.environment.persistence."/persist/system".directories;
   disabledSshPersistence = evalImpermanence {
     host = mkHost { enable = false; };
     extraModule.services.openssh.enable = true;
@@ -200,6 +208,14 @@ let
       systemFilePaths persistedSshDirectory == persistedSystemFiles;
     externally-managed-ssh-adds-no-key-files =
       systemFilePaths externallyManagedSsh == persistedSystemFiles;
+    slurm-controller-state-is-persistent =
+      lib.elem slurmController.config.services.slurm.stateSaveLocation (
+        systemDirectoryPaths slurmController
+      )
+      && !lib.elem valid.config.services.slurm.stateSaveLocation (systemDirectoryPaths valid);
+    persisted-files-survive-switch =
+      lib.all (unit: !ssh.config.systemd.services.${unit}.restartIfChanged)
+        (lib.filter (lib.hasPrefix "persist-persist-system-") (lib.attrNames ssh.config.systemd.services));
     disabled-impermanence-adds-no-ssh-persistence =
       disabledSshPersistence.config.environment.persistence == { };
     selective-emits-all-users =

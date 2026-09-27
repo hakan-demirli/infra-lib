@@ -34,10 +34,14 @@ let
   fleetAdminTag = "tag:fleet-admin-client";
   metricsTag = "tag:metrics";
   nixCacheTag = "tag:nix-binary-cache";
+  deployControllerTag = "tag:fleet-deploy-controller";
+  inherit (inventory) deployController;
   fleetServicePorts = {
     logs = 9428;
     nixCache = 5101;
     inbox = 873;
+    deployPlan = 5102;
+    metricsQuery = 8428;
   };
   adminClientHosts = filter (
     h:
@@ -140,7 +144,8 @@ let
     in
     roleTags
     ++ optional (isMonitoredHost hosts.${hid}) metricsTag
-    ++ optional clusterHasController nixCacheTag;
+    ++ optional clusterHasController nixCacheTag
+    ++ optional (hid == deployController) deployControllerTag;
 
   hostPolicyTags = mapAttrs (hid: _: policyTagsOfHost hid) hosts;
 
@@ -213,6 +218,74 @@ let
       mkRule senders fleetAdminTag (toString fleetServicePorts.inbox) "inbox"
     )
   ) (attrNames activeClusters);
+
+  deployRules = optionals (deployController != null) (
+    [
+      (mkRule [ metricsTag ] deployControllerTag (toString fleetServicePorts.deployPlan) "deploy-plan")
+      (mkRule [ nixCacheTag ] deployControllerTag (toString fleetServicePorts.nixCache) "deploy-cache")
+    ]
+    ++ concatMap (
+      cid:
+      let
+        controllerTag = controllerTagOf cid;
+      in
+      optional (controllerTag != null) (
+        mkRule [ deployControllerTag ] controllerTag (toString fleetServicePorts.metricsQuery) "deploy-gate"
+      )
+    ) (attrNames activeClusters)
+  );
+
+  hostOwners =
+    hid:
+    let
+      inherit (hosts.${hid}) ownership;
+      team = if ownership.team == null then null else teams.${ownership.team} or null;
+    in
+    optional (ownership.owner != null) ownership.owner
+    ++ optionals (team != null) (map (m: m.user) (filter (m: m.role == "admin") team.members));
+
+  hostTrusted =
+    hid:
+    let
+      owners = hostOwners hid;
+    in
+    all (entry: !entry.root_capable || elem entry.user owners) (
+      attrValues (accounts.onHost inventory hid)
+    )
+    && all (uid: elem uid owners) (hosts.${hid}.ssh_trust.root or [ ]);
+
+  deployDependencies =
+    hid:
+    let
+      cid = hostToCluster.${hid} or null;
+      c = if cid == null then null else clusters.${cid};
+      controllers = if c == null || c.scheduler.kind != "slurm" then [ ] else c.scheduler.controllers;
+      partitionNodes = concatMap (p: p.nodes) (attrValues (c.scheduler.partitions or { }));
+      usesSlurm = elem hid partitionNodes || elem hid hostsWithSlurmClient;
+    in
+    optionals (usesSlurm && !elem hid controllers) (
+      filter (d: elem d inventory.deployableHosts) controllers
+    );
+
+  deployPlan = {
+    controller = deployController;
+    hosts = genAttrs (filter (hid: isMonitoredHost hosts.${hid}) inventory.deployableHosts) (
+      hid:
+      let
+        system = hosts.${hid}.hardware.arch;
+      in
+      {
+        inherit (hosts.${hid}.deploy) wave hold;
+        inherit system;
+        after = deployDependencies hid;
+        trusted = hostTrusted hid;
+        cache =
+          deployController != null
+          && elem nixCacheTag (policyTagsOfHost hid)
+          && system == hosts.${deployController}.hardware.arch;
+      }
+    );
+  };
 
   meshRules = concatMap (
     cid:
@@ -322,6 +395,7 @@ let
     ++ logsRules
     ++ nixCacheRules
     ++ inboxRules
+    ++ deployRules
     ++ meshRules
     ++ loginToComputeRules
     ++ computeToStorageRulesIntra
@@ -513,7 +587,18 @@ let
     }) noClient
   ) (attrNames slurmClusters);
 
-  intentViolations = violationsSshNoTailnet ++ violationsSlurmNoTailnet ++ violationsSlurmNoClient;
+  violationsUntrustedCache = map (hid: {
+    kind = "untrusted-cache-client";
+    severity = "error";
+    message = "host '${hid}' can read the fleet binary caches but grants root to users who do not own it";
+    host = hid;
+  }) (filter (hid: elem nixCacheTag (policyTagsOfHost hid) && !hostTrusted hid) (attrNames hosts));
+
+  intentViolations =
+    violationsSshNoTailnet
+    ++ violationsSlurmNoTailnet
+    ++ violationsSlurmNoClient
+    ++ violationsUntrustedCache;
 
   errors = filter (v: v.severity == "error") intentViolations;
   warnings = filter (v: v.severity == "warn") intentViolations;
@@ -522,6 +607,7 @@ in
 {
   inherit
     aclRules
+    deployPlan
     hostPolicyTags
     userGroups
     sshGrants

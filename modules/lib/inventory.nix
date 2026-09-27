@@ -623,6 +623,57 @@ let
         "host '${h.id}' uses ${expected} but deployment role '${roleId}' has kind='${deploymentRoles.${roleId}.kind}'"
     ) (hostDeploymentRoles h);
 
+  deployableHosts = filterAttrs (
+    _: h: h.hardware.os == "linux" && h.tailnet_member && h.state == "provisioned"
+  ) hosts;
+  deployControllers = attrNames (filterAttrs (_: h: h.deploy.controller) hosts);
+  slurmClientModules = [
+    "infra:services/slurm-client"
+    "infra:services/slurm"
+  ];
+  hostsWithSlurmClient = filter (
+    hid:
+    any (
+      rid:
+      any (module: elem module slurmClientModules) (deploymentRoles.${rid} or { modules = [ ]; }).modules
+    ) (hostDeploymentRoles hosts.${hid})
+  ) (attrNames hosts);
+
+  deploySlurmContract = concatLists (
+    mapAttrsToList (
+      cid: c:
+      let
+        deployable = filter (hid: deployableHosts ? ${hid});
+        waveOf = hid: hosts.${hid}.deploy.wave;
+        daemons = deployable (unique (schedulerHostsOf c));
+        daemonWaves = unique (map waveOf daemons);
+        controllerWaves = map waveOf (deployable c.scheduler.controllers);
+        submitHosts = deployable (
+          filter (hid: (hostToCluster.${hid} or null) == cid && !elem hid daemons) hostsWithSlurmClient
+        );
+      in
+      optional (length daemonWaves > 1)
+        "Slurm cluster '${cid}' spreads its controllers and nodes over deploy waves ${
+          concatMapStringsSep ", " toString daemonWaves
+        }; they upgrade together"
+      ++ concatMap (
+        hid:
+        optional (any (wave: waveOf hid < wave) controllerWaves)
+          "host '${hid}' submits to Slurm cluster '${cid}' but is in an earlier deploy wave than its controllers"
+      ) submitHosts
+    ) (filterAttrs (_: c: c.scheduler.kind == "slurm") explicitClusters)
+  );
+
+  deployControllerContract =
+    optional (length deployControllers > 1)
+      "hosts ${concatStringsSep ", " deployControllers} all set deploy.controller; a fleet has one deploy controller"
+    ++ concatMap (
+      hid:
+      optional (
+        !deployableHosts ? ${hid}
+      ) "deploy controller '${hid}' must be a provisioned Linux tailnet host"
+    ) deployControllers;
+
   hostRoleUniqueness =
     h:
     concatLists [
@@ -1073,6 +1124,8 @@ let
     studentExpiresAsserts
     adminScopeAsserts
     hostClusterCollisions
+    deployControllerContract
+    deploySlurmContract
   ];
 
   result = {
@@ -1107,6 +1160,8 @@ let
     usersOnHost = mapAttrs (hid: _: usersOnHost hid) hosts;
     usersOnCluster = mapAttrs (cid: _: usersOnCluster cid) clusters;
     activeDeploymentRoles = attrNames hostsByDeploymentRole;
+    deployableHosts = attrNames deployableHosts;
+    deployController = if deployControllers == [ ] then null else head deployControllers;
 
     hostTopologyRoles = mapAttrs (_: h: sort lessThan (unique h.topology_roles)) hosts;
 
@@ -1145,21 +1200,7 @@ let
       filterAttrs (_: c: c.scheduler.kind == "slurm") clusters
     );
 
-    hostsWithSlurmClient =
-      let
-        slurmClientModules = [
-          "infra:services/slurm-client"
-          "infra:services/slurm"
-        ];
-        deploymentRoleHasSlurmClient =
-          rid:
-          let
-            r = deploymentRoles.${rid} or null;
-            mods = if r == null then [ ] else r.modules;
-          in
-          any (m: elem m slurmClientModules) mods;
-      in
-      filter (hid: any deploymentRoleHasSlurmClient (hostDeploymentRoles hosts.${hid})) (attrNames hosts);
+    inherit hostsWithSlurmClient;
   };
 
   hostTopologyRolesOf = hid: sort lessThan (unique hosts.${hid}.topology_roles);
