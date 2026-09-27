@@ -64,8 +64,26 @@ let
         state = "provisioned";
         topology_roles = [ "controller" ];
       };
+      compute = {
+        state = "provisioned";
+        topology_roles = [ "compute" ];
+      };
     };
+    clusters.personal = inventory.clusters.personal // {
+      scheduler.kind = "slurm";
+    };
+    hostToCluster = {
+      admin-client = "personal";
+      controller = "personal";
+      compute = "personal";
+    };
+    hostsWithSlurmClient = [
+      "admin-client"
+      "controller"
+      "compute"
+    ];
     controllerNodesOfCluster.personal = [ "controller" ];
+    computeNodesOfCluster.personal = [ "compute" ];
     deployController = "admin-client";
     deployableHosts = [ "admin-client" ];
   };
@@ -132,6 +150,24 @@ pkgs.testers.runNixOSTest {
     assert {"action": "accept", "src": ["tag:fleet-deploy-controller"], "dst": [
         "tag:cluster-personal-controller:8428",
     ]} in admin_policy["acls"], admin_policy
+    assert {"action": "accept", "src": ["tag:cluster-personal"], "dst": [
+        "tag:cluster-personal-controller:6817",
+    ]} in admin_policy["acls"], admin_policy
+    assert {"action": "accept", "src": ["tag:cluster-personal"], "dst": [
+        "tag:cluster-personal-compute:6818",
+    ]} in admin_policy["acls"], admin_policy
+    assert {"action": "accept", "src": [
+        "tag:cluster-personal-controller",
+        "tag:cluster-personal-compute",
+    ], "dst": [
+        "tag:cluster-personal:60001-63000",
+        "tag:fleet-admin-client:60001-63000",
+    ]} in admin_policy["acls"], admin_policy
+    assert not any(
+        dst.endswith((":6817", ":6818", ":60001-63000"))
+        for rule in policy["acls"]
+        for dst in rule["dst"]
+    ), policy
     headscale.succeed("headscale policy check --file ${adminAclFile}")
 
     print("GENERATED HEADSCALE POLICY VERIFIED")
