@@ -31,7 +31,9 @@ in
         MetricsType=metrics/openmetrics
       '';
 
-      networking.firewall.allowedTCPPorts = [ cfg.listenPort ];
+      networking.firewall.interfaces.${config.services.tailscale.interfaceName}.allowedTCPPorts = [
+        cfg.listenPort
+      ];
     })
   ];
 }
