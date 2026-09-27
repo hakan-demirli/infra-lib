@@ -101,8 +101,29 @@ let
     }
   );
   mungeService = mungeSops.systemd.services.munged;
+  microcode =
+    vendor: firmware:
+    (inputs.nixpkgs.lib.nixosSystem {
+      inherit system;
+      specialArgs.host.hardware.cpu_vendor = vendor;
+      modules = [
+        (self + "/modules/common/cpu-microcode.nix")
+        {
+          boot.isContainer = true;
+          hardware.enableRedistributableFirmware = firmware;
+          system.stateVersion = "26.05";
+        }
+      ];
+    }).config.hardware.cpu;
 
   checks = {
+    intel-host-loads-intel-microcode =
+      (microcode "intel" true).intel.updateMicrocode && !(microcode "intel" true).amd.updateMicrocode;
+    amd-host-loads-amd-microcode =
+      (microcode "amd" true).amd.updateMicrocode && !(microcode "amd" true).intel.updateMicrocode;
+    other-host-loads-no-microcode =
+      !(microcode "ampere" true).intel.updateMicrocode && !(microcode "ampere" true).amd.updateMicrocode;
+    microcode-follows-redistributable-firmware = !(microcode "intel" false).intel.updateMicrocode;
     host-identity-does-not-mask-persistent-state = !(hostIdentity.fileSystems ? "/persist/system");
     host-identity-uses-inventory-id = hostIdentity.networking.hostName == "inventory-host";
     bluetooth-keeps-explicit-power-policy =
