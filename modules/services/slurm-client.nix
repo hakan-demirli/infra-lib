@@ -7,6 +7,7 @@
 }:
 let
   cfg = config.services.slurm-client;
+  ports = import ../lib/slurm-ports.nix;
   hasMungeSecret = lib.hasAttrByPath [ "sops" "secrets" "munge-key" ] config;
   clusterId =
     if host == null || cluster == null then null else (cluster.hostToCluster.${host.id} or null);
@@ -73,6 +74,9 @@ in
         extraConfig = ''
           AuthType=auth/munge
           CryptoType=crypto/munge
+          SlurmctldPort=${toString ports.controller}
+          SlurmdPort=${toString ports.node}
+          SrunPortRange=${ports.srun}
         '';
       };
     };

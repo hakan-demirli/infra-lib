@@ -416,6 +416,44 @@ in
         ) (attrNames activeClusters)
       );
 
+      slurmPorts = import ./slurm-ports.nix;
+      slurmRules = concatMap (
+        cid:
+        let
+          broad = broadTagOf cid;
+          controllerTag = controllerTagOf cid;
+          ct = computeTagOf cid;
+          submitHosts = filter (hid: (inventory.hostToCluster.${hid} or null) == cid) (
+            inventory.hostsWithSlurmClient or [ ]
+          );
+          submitTags = [
+            broad
+          ]
+          ++ optional (any (
+            hid: elem "admin-client" (hosts.${hid}.topology_roles or [ ])
+          ) submitHosts) fleetAdminTag;
+          daemonTags = filter (t: t != null) [
+            controllerTag
+            ct
+          ];
+        in
+        optional (controllerTag != null) {
+          action = "accept";
+          src = [ broad ];
+          dst = [ "${controllerTag}:${toString slurmPorts.controller}" ];
+        }
+        ++ optional (ct != null) {
+          action = "accept";
+          src = [ broad ];
+          dst = [ "${ct}:${toString slurmPorts.node}" ];
+        }
+        ++ optional (daemonTags != [ ]) {
+          action = "accept";
+          src = daemonTags;
+          dst = map (tag: "${tag}:${slurmPorts.srun}") submitTags;
+        }
+      ) (filter (cid: (clusters.${cid}.scheduler.kind or "none") == "slurm") (attrNames activeClusters));
+
       inboxRules = concatMap (
         cid:
         let
@@ -600,6 +638,7 @@ in
       ++ nixCacheRules
       ++ inboxRules
       ++ deployRules
+      ++ slurmRules
       ++ computeMeshRules
       ++ loginToComputeRules
       ++ computeToStorageRules

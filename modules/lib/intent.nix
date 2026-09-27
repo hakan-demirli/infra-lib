@@ -235,6 +235,34 @@ let
     ) (attrNames activeClusters)
   );
 
+  slurmPorts = import ./slurm-ports.nix;
+  slurmSubmitHostsOf = cid: filter (hid: (hostToCluster.${hid} or null) == cid) hostsWithSlurmClient;
+  slurmRules = concatMap (
+    cid:
+    let
+      broad = broadTagOf cid;
+      controllerTag = controllerTagOf cid;
+      ct = computeTagOf cid;
+      submitTags = [
+        broad
+      ]
+      ++ optional (any (hid: elem "admin-client" (hostTopologyRoles.${hid} or [ ])) (
+        slurmSubmitHostsOf cid
+      )) fleetAdminTag;
+      daemonTags = filter (t: t != null) [
+        controllerTag
+        ct
+      ];
+    in
+    optional (controllerTag != null) (
+      mkRule [ broad ] controllerTag (toString slurmPorts.controller) "slurmctld"
+    )
+    ++ optional (ct != null) (mkRule [ broad ] ct (toString slurmPorts.node) "slurmd")
+    ++ optionals (daemonTags != [ ]) (
+      map (tag: mkRule daemonTags tag slurmPorts.srun "srun") submitTags
+    )
+  ) (attrNames slurmClusters);
+
   hostOwners =
     hid:
     let
@@ -396,6 +424,7 @@ let
     ++ nixCacheRules
     ++ inboxRules
     ++ deployRules
+    ++ slurmRules
     ++ meshRules
     ++ loginToComputeRules
     ++ computeToStorageRulesIntra
@@ -570,6 +599,41 @@ let
       [ ]
   ) slurmSubmitGrants;
 
+  slurmDaemonPaths = concatMap (
+    cid:
+    let
+      inherit (slurmClusters.${cid}.scheduler) controllers partitions;
+      nodes = unique (concatMap (p: p.nodes) (attrValues partitions));
+      submitHosts = slurmSubmitHostsOf cid;
+      paths =
+        purpose: port: sources: targets:
+        concatMap (
+          src:
+          map (dst: {
+            inherit
+              cid
+              purpose
+              port
+              src
+              dst
+              ;
+          }) targets
+        ) sources;
+    in
+    paths "slurmctld" (toString slurmPorts.controller) (unique (nodes ++ submitHosts)) controllers
+    ++ paths "slurmd" (toString slurmPorts.node) (unique (controllers ++ submitHosts)) nodes
+    ++ paths "srun" slurmPorts.srun (unique (controllers ++ nodes)) submitHosts
+  ) (attrNames slurmClusters);
+
+  violationsSlurmDaemons = map (p: {
+    kind = "slurm-daemon-no-tailnet";
+    severity = "error";
+    message = "slurm cluster '${p.cid}': '${p.src}' cannot reach ${p.purpose} on '${p.dst}' port ${p.port} via headscale";
+    host = p.dst;
+    inherit (p) src port;
+    cluster = p.cid;
+  }) (filter (p: p.src != p.dst && !canHostReach p.src p.dst p.port) slurmDaemonPaths);
+
   violationsSlurmNoClient = concatMap (
     cid:
     let
@@ -597,6 +661,7 @@ let
   intentViolations =
     violationsSshNoTailnet
     ++ violationsSlurmNoTailnet
+    ++ violationsSlurmDaemons
     ++ violationsSlurmNoClient
     ++ violationsUntrustedCache;
 
