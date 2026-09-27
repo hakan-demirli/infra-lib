@@ -3,13 +3,15 @@
   perSystem =
     { pkgs, system, ... }:
     let
-      cephPkgs = pkgs.extend (
+      testPkgs = pkgs.extend (import ./checks/lib/vm-harness.nix);
+      cephPkgs = testPkgs.extend (
         _final: _prev: {
           inherit (inputs.nixpkgs-ceph.legacyPackages.${system}) ceph;
         }
       );
       testSuite = import ./checks/lib {
-        inherit pkgs inputs cephPkgs;
+        pkgs = testPkgs;
+        inherit inputs cephPkgs;
         inherit (inputs) self;
       };
       fleetRootKey = "ssh-ed25519 AAAA-fleet-admin";
