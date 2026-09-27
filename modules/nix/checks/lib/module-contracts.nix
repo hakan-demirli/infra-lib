@@ -131,6 +131,7 @@ let
     fpga-auto-load-is-explicit =
       fpgaAmi.wantedBy == [ ]
       && fpgaAutoLoad.systemd.services.fpga-v80-ami.wantedBy == [ "multi-user.target" ];
+    fpga-bring-up-survives-switch = !fpgaGuard.restartIfChanged && !fpgaAmi.restartIfChanged;
     fpga-guards-power-before-module-load =
       lib.elem "systemd-modules-load.service" fpgaGuard.before
       && lib.elem "fpga-v80-power-guard.service" fpga.systemd.services.systemd-modules-load.after
@@ -191,7 +192,16 @@ let
     );
     auto-upgrade-disabled-payload = hasFailure "payload is configured" (
       evalModule "/modules/common/auto-upgrade.nix" {
-        cluster.autoUpgrade.onCalendar = "hourly";
+        cluster.autoUpgrade.flake = "github:example/fleet";
+      }
+    );
+    auto-upgrade-requires-plan-membership = hasFailure "requires planUrl, flake" (
+      evalModule "/modules/common/auto-upgrade.nix" {
+        cluster.autoUpgrade = {
+          enable = true;
+          planUrl = "http://deploy.example:5102/plan.json";
+          flake = "github:example/fleet";
+        };
       }
     );
     server-base-disabled-payload = hasFailure "requires system.server.enable=true" (

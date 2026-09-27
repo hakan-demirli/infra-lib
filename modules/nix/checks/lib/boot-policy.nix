@@ -21,12 +21,14 @@ let
       boot ? { },
       system ? "x86_64-linux",
       loader ? "systemd-boot",
+      labels ? { },
       extraModule ? { },
     }:
     inputs.nixpkgs.lib.nixosSystem {
       inherit system;
       specialArgs.host = {
         id = "boot-policy-test";
+        inherit labels;
         boot = parseBoot boot;
       };
       modules = [
@@ -56,6 +58,11 @@ let
     boot.efi_registration = "fallback";
     extraModule.boot.loader.efi.canTouchEfiVariables = true;
   };
+  hibernating = evaluate { labels.hibernation = "true"; };
+  hibernatingWithCounting = evaluate {
+    labels.hibernation = "true";
+    extraModule.boot.loader.systemd-boot.bootCounting.enable = true;
+  };
   invalid = builtins.tryEval (builtins.deepSeq (parseBoot { efi_registration = "invalid"; }) true);
   failures = system: lib.filter (assertion: !assertion.assertion) system.config.assertions;
   checks = {
@@ -76,12 +83,23 @@ let
     grub-fallback-is-removable =
       !grubFallback.config.boot.loader.efi.canTouchEfiVariables
       && grubFallback.config.boot.loader.grub.efiInstallAsRemovable;
+    normal-pc-counts-boots =
+      normal.config.boot.loader.systemd-boot.bootCounting.enable
+      &&
+        lib.elem "sshd.service" normal.config.systemd.targets.boot-complete.requires
+        == normal.config.services.openssh.enable;
+    hibernating-pc-does-not-count-boots =
+      !hibernating.config.boot.loader.systemd-boot.bootCounting.enable;
+    hibernating-pc-rejects-boot-counting = lib.any (
+      assertion: lib.hasInfix "resume from hibernation" assertion.message
+    ) (failures hibernatingWithCounting);
     valid-policies-pass-assertions = lib.all (system: failures system == [ ]) [
       normal
       arm
       fallback
       grub
       grubFallback
+      hibernating
     ];
     incompatible-grub-options-fail = lib.any (
       assertion: lib.hasInfix "efiInstallAsRemovable" assertion.message

@@ -129,6 +129,49 @@ let
       '';
     };
 
+  slurmDeployFiles =
+    {
+      controllerWave,
+      nodeWave,
+      submitWave,
+    }:
+    {
+      "users/inventory-user.nix" = validUser "inventory-user";
+      "deployment-roles/compute-role.nix" = validDeploymentRole "compute-role";
+      "deployment-roles/submit-role.nix" = ''
+        {
+          id = "submit-role";
+          kind = "nixos";
+          modules = [ "infra:services/slurm-client" ];
+        }
+      '';
+      "hosts/lab/h-ctl.nix" = validHost "h-ctl" "deploy.wave = ${toString controllerWave};";
+      "hosts/lab/h-node.nix" = validHost "h-node" "deploy.wave = ${toString nodeWave};";
+      "hosts/lab/h-submit.nix" =
+        lib.replaceStrings
+          [ ''deployment_roles = [ "compute-role" ];'' ]
+          [ ''deployment_roles = [ "submit-role" ];'' ]
+          (validHost "h-submit" "deploy.wave = ${toString submitWave};");
+      "clusters/c-slurm.nix" = ''
+        {
+          id = "c-slurm";
+          ownership = {
+            class = "personal";
+            owner = "inventory-user";
+          };
+          members.hosts = [ "h-ctl" "h-node" "h-submit" ];
+          scheduler = {
+            kind = "slurm";
+            controllers = [ "h-ctl" ];
+            partitions.batch = {
+              nodes = [ "h-node" ];
+              default = true;
+            };
+          };
+        }
+      '';
+    };
+
   validHost = id: extra: ''
     {
       id = "${id}";
@@ -442,6 +485,55 @@ let
       };
     };
 
+    deploy-accepts-one-controller-and-a-dated-hold = {
+      desc = "one provisioned deploy controller and a reasoned hold load";
+      expectFail = false;
+      files = {
+        "users/inventory-user.nix" = validUser "inventory-user";
+        "deployment-roles/compute-role.nix" = validDeploymentRole "compute-role";
+        "hosts/lab/h-controller.nix" = validHost "h-controller" "deploy.controller = true;";
+        "hosts/lab/h-held.nix" = validHost "h-held" ''
+          deploy.hold = {
+            reason = "tapeout";
+            until = "2026-12-31";
+          };
+        '';
+      };
+    };
+
+    deploy-rejects-two-controllers = {
+      desc = "a fleet has at most one deploy controller";
+      expectFail = true;
+      files = {
+        "users/inventory-user.nix" = validUser "inventory-user";
+        "deployment-roles/compute-role.nix" = validDeploymentRole "compute-role";
+        "hosts/lab/h-controller-a.nix" = validHost "h-controller-a" "deploy.controller = true;";
+        "hosts/lab/h-controller-b.nix" = validHost "h-controller-b" "deploy.controller = true;";
+      };
+    };
+
+    deploy-rejects-an-unprovisioned-controller = {
+      desc = "the deploy controller must be a provisioned tailnet host";
+      expectFail = true;
+      files = {
+        "users/inventory-user.nix" = validUser "inventory-user";
+        "deployment-roles/compute-role.nix" = validDeploymentRole "compute-role";
+        "hosts/lab/h-controller.nix" =
+          lib.replaceStrings [ ''state = "provisioned";'' ] [ ''state = "provisioning";'' ]
+            (validHost "h-controller" "deploy.controller = true;");
+      };
+    };
+
+    deploy-rejects-a-hold-without-reason = {
+      desc = "a deploy hold needs a reason";
+      expectFail = true;
+      files = {
+        "users/inventory-user.nix" = validUser "inventory-user";
+        "deployment-roles/compute-role.nix" = validDeploymentRole "compute-role";
+        "hosts/lab/h-held.nix" = validHost "h-held" ''deploy.hold.reason = " ";'';
+      };
+    };
+
     slurm-node-attributes-require-partition = {
       desc = "Slurm node fields require partition membership";
       expectFail = true;
@@ -680,6 +772,36 @@ let
       files = clusterAccessFiles {
         kind = "shared";
         tier = "root";
+      };
+    };
+
+    deploy-accepts-a-slurm-cluster-in-one-wave = {
+      desc = "Slurm daemons share one wave and submit hosts may follow later";
+      expectFail = false;
+      files = slurmDeployFiles {
+        controllerWave = 1;
+        nodeWave = 1;
+        submitWave = 2;
+      };
+    };
+
+    deploy-rejects-slurm-daemons-in-different-waves = {
+      desc = "slurmctld and slurmd hosts upgrade in the same wave";
+      expectFail = true;
+      files = slurmDeployFiles {
+        controllerWave = 1;
+        nodeWave = 0;
+        submitWave = 1;
+      };
+    };
+
+    deploy-rejects-submit-hosts-before-their-controller = {
+      desc = "Slurm client commands never run ahead of slurmctld";
+      expectFail = true;
+      files = slurmDeployFiles {
+        controllerWave = 1;
+        nodeWave = 1;
+        submitWave = 0;
       };
     };
 

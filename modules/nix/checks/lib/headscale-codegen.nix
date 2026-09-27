@@ -21,6 +21,8 @@ let
       };
     };
     machineAge = { };
+    deployController = null;
+    deployableHosts = [ ];
     loginNodesOfCluster.personal = [ ];
     computeNodesOfCluster.personal = [ ];
     storageNodesOfCluster.personal = [ ];
@@ -64,6 +66,8 @@ let
       };
     };
     controllerNodesOfCluster.personal = [ "controller" ];
+    deployController = "admin-client";
+    deployableHosts = [ "admin-client" ];
   };
   adminCodegen = self.lib.mkCodegen {
     inventory = adminInventory;
@@ -117,6 +121,17 @@ pkgs.testers.runNixOSTest {
         ]
         for rule in admin_policy["acls"]
     ), admin_policy
+    assert "tag:fleet-deploy-controller" not in policy["tagOwners"], policy
+    assert admin_policy["tagOwners"]["tag:fleet-deploy-controller"] == ["group:admin"], admin_policy
+    assert {"action": "accept", "src": ["tag:metrics"], "dst": [
+        "tag:fleet-deploy-controller:5102",
+    ]} in admin_policy["acls"], admin_policy
+    assert {"action": "accept", "src": ["tag:nix-binary-cache"], "dst": [
+        "tag:fleet-deploy-controller:5101",
+    ]} in admin_policy["acls"], admin_policy
+    assert {"action": "accept", "src": ["tag:fleet-deploy-controller"], "dst": [
+        "tag:cluster-personal-controller:8428",
+    ]} in admin_policy["acls"], admin_policy
     headscale.succeed("headscale policy check --file ${adminAclFile}")
 
     print("GENERATED HEADSCALE POLICY VERIFIED")

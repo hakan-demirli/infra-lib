@@ -57,6 +57,7 @@ in
       fpga-v80-power-guard = {
         description = "Disable D3cold before loading the Alveo V80 AMI driver";
         wantedBy = [ "sysinit.target" ];
+        restartIfChanged = false;
         before = [
           "systemd-modules-load.service"
           "sysinit.target"
@@ -89,6 +90,7 @@ in
       fpga-v80-ami = {
         description = "Load AMI after the Alveo V80 management interface is ready";
         wantedBy = lib.optional backend.autoLoad "multi-user.target";
+        restartIfChanged = false;
         after = [ "fpga-v80-power-guard.service" ];
         requires = [ "fpga-v80-power-guard.service" ];
         path = [

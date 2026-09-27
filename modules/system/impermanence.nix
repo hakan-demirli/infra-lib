@@ -2,12 +2,19 @@
   config,
   lib,
   pkgs,
+  utils,
   host,
   cluster,
   ...
 }:
 let
   cfg = config.system.impermanence;
+  persistFileUnits = lib.concatMap (
+    storage:
+    map (file: "persist-${utils.escapeSystemdPath "${file.persistentStoragePath}${file.filePath}"}") (
+      storage.files ++ lib.concatMap (user: user.files) (lib.attrValues storage.users)
+    )
+  ) (lib.filter (storage: storage.enable) (lib.attrValues config.environment.persistence));
   hostImpermanence =
     host.impermanence or {
       enable = false;
@@ -28,7 +35,9 @@ let
     "/etc/machine-id"
     "/var/lib/systemd/credential.secret"
   ];
-  systemPaths = defaultSystemPaths ++ cfg.persistentDirs ++ hostImpermanence.persisted_paths;
+  serviceStatePaths = lib.optional config.services.slurm.server.enable config.services.slurm.stateSaveLocation;
+  systemPaths =
+    defaultSystemPaths ++ serviceStatePaths ++ cfg.persistentDirs ++ hostImpermanence.persisted_paths;
   declaredSystemFiles = defaultSystemFiles ++ hostImpermanence.persisted_files;
   sshHostKeyFiles =
     lib.filter
@@ -305,7 +314,17 @@ in
           assertion = hostImpermanence.enable || config.environment.persistence == { };
           message = "host '${host.id}': environment.persistence is configured while impermanence.enable=false.";
         }
+        {
+          assertion = lib.all (
+            unit: config.systemd.services.${unit}.serviceConfig ? ExecStop
+          ) persistFileUnits;
+          message = "host '${host.id}': a persisted file unit name does not match the impermanence module.";
+        }
       ];
+
+      systemd.services = lib.genAttrs persistFileUnits (_: {
+        restartIfChanged = false;
+      });
     }
 
     (lib.mkIf hostImpermanence.enable (

@@ -952,6 +952,42 @@ let
         default = true;
         description = "Whether the host joins the tailnet; non-members get no cluster and no policy tag.";
       };
+      deploy = mkOption {
+        type = submodule {
+          options = {
+            wave = mkOption {
+              type = ints.unsigned;
+              default = 0;
+              description = ''
+                Rollout wave. The lowest wave takes every deploy revision first;
+                a later wave takes the newest revision that the trusted hosts of
+                the previous wave ran without failures for the controller's soak
+                time. All members of a Slurm cluster share one wave.
+              '';
+            };
+            hold = mkOption {
+              type = nullOr (submodule {
+                options = {
+                  reason = mkOption { type = strMatching ".*[^[:space:]].*"; };
+                  until = mkOption {
+                    type = nullOr date;
+                    default = null;
+                    description = "Last UTC day of the hold. Null holds until the entry is removed.";
+                  };
+                };
+              });
+              default = null;
+              description = "Keeps the host on its current configuration.";
+            };
+            controller = mkOption {
+              type = bool;
+              default = false;
+              description = "Builds, gates and serves the deployments of the whole fleet.";
+            };
+          };
+        };
+        default = { };
+      };
       monitoring = mkOption {
         type = submodule {
           options = {
