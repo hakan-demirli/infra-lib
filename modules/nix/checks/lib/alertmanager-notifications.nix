@@ -248,7 +248,8 @@ pkgs.testers.runNixOSTest {
     assert ntfy["path"] == "/alerts", ntfy
     assert ntfy_headers["x-priority"] == "high", ntfy_headers
     assert "warning" in ntfy_headers["x-tags"], ntfy_headers
-    assert ntfy_headers["x-title"] == "[FIRING] Fan-out test", ntfy_headers
+    assert ntfy_headers["x-title"] == "Fan-out test", ntfy_headers
+    assert ntfy_headers["x-sequence-id"] != "", ntfy_headers
     assert "All configured channels receive this alert." in ntfy["body"], ntfy
 
     email = read_events("smtp.jsonl")[-1]["body"]
@@ -280,7 +281,12 @@ pkgs.testers.runNixOSTest {
     assert "[RESOLVED] FanoutProbe (warning)" in json.loads(
         read_events("http-9998.jsonl")[-1]["body"]
     )["embeds"][0]["title"]
-    assert read_events("http-9999.jsonl")[-1]["headers"]["X-Priority"] == "default"
+    resolved_ntfy = {
+        key.lower(): value for key, value in read_events("http-9999.jsonl")[-1]["headers"].items()
+    }
+    assert resolved_ntfy["x-priority"] == "low", resolved_ntfy
+    assert resolved_ntfy["x-title"] == "Resolved: Fan-out test", resolved_ntfy
+    assert resolved_ntfy["x-sequence-id"] == ntfy_headers["x-sequence-id"], resolved_ntfy
     assert "Subject: [RESOLVED] FanoutProbe (warning)" in read_events("smtp.jsonl")[-1]["body"]
 
     resolved_counts = {
