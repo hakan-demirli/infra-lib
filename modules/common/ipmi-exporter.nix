@@ -5,13 +5,16 @@
   ...
 }:
 let
+  ports = import ../lib/exporter-ports.nix;
   enabled = (host.monitoring.enabled or true) && (lib.elem "ipmi" (host.monitoring.exporters or [ ]));
 in
 {
+  imports = [ ./tailnet-only-ports.nix ];
+
   config = lib.mkIf enabled {
     services.prometheus.exporters.ipmi = {
       enable = true;
-      port = 9290;
+      port = ports.ipmi;
       listenAddress = "0.0.0.0";
     };
 
@@ -25,6 +28,6 @@ in
       "ipmi_si"
     ];
 
-    networking.firewall.allowedTCPPorts = [ 9290 ];
+    cluster.firewall.tailnetOnlyTCPPorts = [ ports.ipmi ];
   };
 }

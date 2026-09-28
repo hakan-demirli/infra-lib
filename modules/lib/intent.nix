@@ -52,15 +52,7 @@ let
     ])
   ) (attrValues hosts);
   hasAdminClients = adminClientHosts != [ ];
-  exporterPortMap = {
-    node = 9100;
-    smartctl = 9633;
-    ipmi = 9290;
-    "lm-sensors" = 9100;
-    ceph = 9128;
-    slurm = 6817;
-    zfs = 9134;
-  };
+  exporterPortMap = import ./exporter-ports.nix;
   isMonitoredHost =
     h:
     (h.monitoring.enabled or true)

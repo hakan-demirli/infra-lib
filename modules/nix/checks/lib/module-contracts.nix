@@ -115,6 +115,42 @@ let
         }
       ];
     }).config.hardware.cpu;
+  ports = import (self + "/modules/lib/exporter-ports.nix");
+  exporterPorts = [
+    ports.node
+    ports.smartctl
+    ports.ipmi
+  ];
+  evalExporters =
+    extraModule:
+    (inputs.nixpkgs.lib.nixosSystem {
+      inherit system;
+      specialArgs = {
+        host = {
+          id = "exporter-host";
+          monitoring.exporters = [
+            "node"
+            "smartctl"
+            "ipmi"
+          ];
+        };
+        cluster = null;
+      };
+      modules = [
+        (self + "/modules/common/node-exporter.nix")
+        (self + "/modules/common/smartctl-exporter.nix")
+        (self + "/modules/common/ipmi-exporter.nix")
+        {
+          boot.isContainer = true;
+          system.stateVersion = "26.05";
+        }
+        extraModule
+      ];
+    }).config;
+  exporters = evalExporters { };
+  exporterFirewall = exporters.networking.firewall;
+  exporterTailnetPorts =
+    exporterFirewall.interfaces.${exporters.services.tailscale.interfaceName}.allowedTCPPorts;
 
   checks = {
     intel-host-loads-intel-microcode =
@@ -124,6 +160,25 @@ let
     other-host-loads-no-microcode =
       !(microcode "ampere" true).intel.updateMicrocode && !(microcode "ampere" true).amd.updateMicrocode;
     microcode-follows-redistributable-firmware = !(microcode "intel" false).intel.updateMicrocode;
+    metrics-exporters-open-only-on-tailnet =
+      lib.all (port: !lib.elem port exporterFirewall.allowedTCPPorts) exporterPorts
+      && lib.all (port: lib.elem port exporterTailnetPorts) exporterPorts
+      && !hasFailure "tailnetOnlyTCPPorts" exporters;
+    metrics-exporters-reject-global-port =
+      hasFailure "tailnetOnlyTCPPorts ${toString ports.node}"
+        (evalExporters {
+          networking.firewall.allowedTCPPorts = [ ports.node ];
+        });
+    metrics-exporters-reject-other-interface-range =
+      hasFailure "tailnetOnlyTCPPorts ${toString ports.smartctl}"
+        (evalExporters {
+          networking.firewall.interfaces.wlan0.allowedTCPPortRanges = [
+            {
+              from = ports.smartctl;
+              to = ports.smartctl;
+            }
+          ];
+        });
     host-identity-does-not-mask-persistent-state = !(hostIdentity.fileSystems ? "/persist/system");
     host-identity-uses-inventory-id = hostIdentity.networking.hostName == "inventory-host";
     bluetooth-keeps-explicit-power-policy =

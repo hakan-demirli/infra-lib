@@ -7,6 +7,7 @@
   ...
 }:
 let
+  ports = import ../lib/exporter-ports.nix;
   monitoringEnabled =
     (host.monitoring.enabled or true) && (lib.elem "node" (host.monitoring.exporters or [ "node" ]));
   metricsDirectory = "/var/lib/prometheus-node-exporter-textfiles";
@@ -136,10 +137,12 @@ let
   };
 in
 {
+  imports = [ ./tailnet-only-ports.nix ];
+
   config = lib.mkIf monitoringEnabled {
     services.prometheus.exporters.node = {
       enable = true;
-      port = 9100;
+      port = ports.node;
       enabledCollectors = [
         "systemd"
         "processes"
@@ -215,6 +218,6 @@ in
       };
     };
 
-    networking.firewall.allowedTCPPorts = [ 9100 ];
+    cluster.firewall.tailnetOnlyTCPPorts = [ ports.node ];
   };
 }
