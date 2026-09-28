@@ -423,7 +423,7 @@ in
             notification = {
               topic = channels.ntfy.topic;
               priority = ''
-                status == "resolved" ? "default" : labels["severity"] == "critical" ? "urgent" : "high"
+                status == "resolved" ? "low" : labels["severity"] == "critical" ? "urgent" : "high"
               '';
               tags = [
                 {
@@ -441,14 +441,15 @@ in
               ];
               templates = {
                 title = ''
-                  {{ if eq .Status "resolved" }}[RESOLVED]{{ else }}[FIRING]{{ end }} {{ or (index .Annotations "summary") (index .Labels "alertname") }}
+                  {{ if eq .Status "resolved" }}Resolved: {{ end }}{{ or (index .Annotations "summary") (index .Labels "alertname") }}
                 '';
                 description = ''
-                  {{ with index .Annotations "description" }}{{ . }}{{ else }}Alert {{ index .Labels "alertname" }} changed state.{{ end }}
-                  {{ with index .Labels "instance" }}
-                  Instance: {{ . }}{{ end }}
+                  {{ if eq .Status "resolved" }}No action needed.{{ else }}{{ with index .Annotations "description" }}{{ . }}{{ else }}{{ index .Labels "alertname" }} is firing.{{ end }}{{ end }}
                 '';
-                headers.X-Click = "{{ .GeneratorURL }}";
+                headers = {
+                  X-Click = "{{ .GeneratorURL }}";
+                  X-Sequence-ID = "{{ .Fingerprint }}";
+                };
               };
             };
           };
