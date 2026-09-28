@@ -5,13 +5,14 @@
 }:
 let
   cfg = config.services.cluster-slurm-metrics;
+  ports = import ../lib/slurm-ports.nix;
 in
 {
   options.services.cluster-slurm-metrics = {
     enable = lib.mkEnableOption "Slurm 25.11 native OpenMetrics endpoint";
     listenPort = lib.mkOption {
       type = lib.types.port;
-      default = 6817;
+      default = ports.controller;
       description = "slurmctld port; metrics share the RPC socket.";
     };
   };
@@ -20,7 +21,7 @@ in
     {
       assertions = [
         {
-          assertion = cfg.enable || cfg.listenPort == 6817;
+          assertion = cfg.enable || cfg.listenPort == ports.controller;
           message = "services.cluster-slurm-metrics.listenPort requires enable=true.";
         }
       ];

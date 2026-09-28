@@ -6,6 +6,7 @@
 }:
 let
   cfg = config.services.cluster-ceph-exporter;
+  ports = import ../lib/exporter-ports.nix;
 in
 {
   options.services.cluster-ceph-exporter = {
@@ -17,7 +18,7 @@ in
     };
     listenPort = lib.mkOption {
       type = lib.types.port;
-      default = 9128;
+      default = ports.ceph;
     };
   };
 
@@ -25,7 +26,7 @@ in
     {
       assertions = [
         {
-          assertion = cfg.enable || (cfg.mgrInstance == "" && cfg.listenPort == 9128);
+          assertion = cfg.enable || (cfg.mgrInstance == "" && cfg.listenPort == ports.ceph);
           message = "services.cluster-ceph-exporter payload is configured while enable=false.";
         }
         {

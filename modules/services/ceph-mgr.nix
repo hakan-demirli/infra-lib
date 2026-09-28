@@ -5,6 +5,7 @@
 }:
 let
   active = host != null;
+  ports = import ../lib/exporter-ports.nix;
 in
 {
   imports = [ ./ceph-common.nix ];
@@ -17,7 +18,7 @@ in
 
     networking.firewall.allowedTCPPorts = [
       9283
-      9128
+      ports.ceph
     ];
   };
 }
