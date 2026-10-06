@@ -1,6 +1,7 @@
 {
   config,
   lib,
+  pkgs,
   host ? null,
   ...
 }:
@@ -42,6 +43,7 @@ in
     services.grafana = {
       enable = true;
       dataDir = "/var/lib/grafana";
+      declarativePlugins = [ pkgs.grafanaPlugins.prometheus ];
 
       settings = {
         server = {
