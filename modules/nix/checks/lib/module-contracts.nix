@@ -36,6 +36,10 @@ let
   hostIdentity = evalModule "/modules/common/host-identity.nix" {
     cluster.host.id = "inventory-host";
   };
+  base = evalModule "/modules/system/base.nix" { };
+  baseWithSwap = evalModule "/modules/system/base.nix" {
+    swapDevices = [ { device = "/dev/disk/by-partlabel/swap"; } ];
+  };
   bluetooth = evalModule "/modules/system/bluetooth.nix" { };
   bluetoothSleepState = bluetooth.systemd.services.bluetooth-sleep-state;
   bluetoothStateTool = lib.removeSuffix " save" bluetoothSleepState.serviceConfig.ExecStart;
@@ -179,6 +183,16 @@ let
             }
           ];
         });
+    base-kills-single-processes-early =
+      base.services.earlyoom.enable && !lib.elem "-g" base.services.earlyoom.extraArgs;
+    base-compresses-swap-with-shrinker =
+      base.boot.zswap.enable
+      && base.boot.zswap.compressor == "zstd"
+      && base.boot.zswap.shrinkerEnabled
+      && !base.zramSwap.enable;
+    base-requires-a-swap-device =
+      hasFailure "requires at least one physical swap device" base
+      && !hasFailure "requires at least one physical swap device" baseWithSwap;
     host-identity-does-not-mask-persistent-state = !(hostIdentity.fileSystems ? "/persist/system");
     host-identity-uses-inventory-id = hostIdentity.networking.hostName == "inventory-host";
     bluetooth-keeps-explicit-power-policy =

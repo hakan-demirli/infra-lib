@@ -1,5 +1,7 @@
 { config, lib, ... }:
 {
+  imports = [ ../services/earlyoom.nix ];
+
   system.stateVersion = "26.05";
 
   documentation = {
@@ -29,13 +31,20 @@
   hardware.uinput.enable = true;
   hardware.enableRedistributableFirmware = true;
 
-  boot.kernelParams = [
-    "console=tty1"
-    "mitigations=off"
-    "panic=30"
-    "boot.panic_on_fail"
-  ];
-  boot.kernel.sysctl."vm.overcommit_memory" = "0";
+  boot = {
+    kernelParams = [
+      "console=tty1"
+      "mitigations=off"
+      "panic=30"
+      "boot.panic_on_fail"
+    ];
+    kernel.sysctl."vm.overcommit_memory" = "0";
+    zswap = {
+      enable = true;
+      compressor = "zstd";
+      shrinkerEnabled = true;
+    };
+  };
 
   environment = {
     variables = {
