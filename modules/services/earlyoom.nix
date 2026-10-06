@@ -7,7 +7,6 @@ _: {
     freeSwapKillThreshold = 5;
     enableNotifications = false;
     extraArgs = [
-      "-g"
       "--sort-by-rss"
       "--avoid"
       "^(kitty|ssh|sshd|tmux.*|systemd|systemd-logind|[(]sd-pam[)]|sddm|Hyprland|Xorg|waybar|pipewire-pulse|wireplumber|scrd|dbus-daemon|dbus-broker.*|gpg-agent|ssh-agent)$"
