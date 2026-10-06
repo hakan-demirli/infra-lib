@@ -139,7 +139,6 @@ in
           server = {
             HTTP_ADDR = "0.0.0.0";
             HTTP_PORT = cfg.listenPort;
-            DOMAIN = cfg.domain;
             ROOT_URL = "http://${cfg.domain}:${toString cfg.listenPort}/";
             SSH_DOMAIN = cfg.domain;
             SSH_PORT = cfg.sshPort;
