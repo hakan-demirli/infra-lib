@@ -130,6 +130,10 @@ let
         rm -f "$failed_marker"
         finish current none
       fi
+      if jq -e --arg running "$revision" --arg target "$target_revision" \
+        '.history | index([$running]) < index([$target])' <<< "$plan" > /dev/null; then
+        finish held ahead
+      fi
       if [[ -s $failed_marker ]]; then
         read -r failed_toplevel failed_reason < "$failed_marker"
         if [[ $failed_toplevel == "$toplevel" ]]; then
@@ -169,7 +173,7 @@ let
 in
 {
   options.cluster.autoUpgrade = {
-    enable = lib.mkEnableOption "pull-based fleet upgrades that switch to the planned generation and never reboot";
+    enable = lib.mkEnableOption "pull-based fleet upgrades that switch to the planned generation, never downgrade and never reboot";
     planUrl = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
       default = null;

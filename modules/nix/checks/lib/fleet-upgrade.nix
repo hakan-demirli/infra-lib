@@ -145,6 +145,11 @@ pkgs.testers.runNixOSTest {
           upgrade("waiting", "dependency")
           running(f"{base}/specialisation/next")
 
+      with subtest("a host ahead of its plan is never downgraded"):
+          publish(history, revision="${baseRevision}", toplevel=base)
+          upgrade("held", "ahead")
+          running(f"{base}/specialisation/next")
+
       with subtest("a plan for another host or with a foreign path is rejected"):
           publish(history, revision=good, toplevel="/nix/store/00000000000000000000000000000000-nixos-system-other-1")
           upgrade("failed", "invalid-plan", succeeds=False)
