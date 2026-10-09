@@ -210,6 +210,8 @@ pkgs.runCommand "home-storage-contract"
     test "$(readlink "$replayHome/.nix-profile")" = "$replayHome/.local/state/nix/profiles/profile"
     test "$(readlink "$replayHome/.local/state/nix/profiles/profile")" = profile-1-link
     test "$(readlink -e "$replayHome/.local/state/nix/profiles/profile-1-link")" = "$(readlink -e ${fixtureGeneration}/home-path)"
+    test "$(readlink "$replayHome/.local/state/nix/profiles/home-manager")" = home-manager-1-link
+    test "$(readlink -e "$replayHome/.local/state/nix/profiles/home-manager-1-link")" = ${fixtureGeneration}
     test "$(readlink -e "$replayHome/.bashrc")" = ${fixtureFile}
     test -L "$replayHome/.config/systemd/user/fixture.service"
     test "$(readlink -e "$replayHome/.local/state/home-manager/gcroots/current-home")" = ${fixtureGeneration}

@@ -127,6 +127,8 @@ done < <(find "$home_files" \( -type f -o -type l \) -print0)
 check_managed_link "$profile_directory/profile-1-link" "" "home-manager-path"
 check_managed_link "$profile_directory/profile" "profile-1-link" ""
 check_managed_link "$home/.nix-profile" "$profile_directory/profile" ""
+check_managed_link "$profile_directory/home-manager-1-link" "" "home-manager-generation"
+check_managed_link "$profile_directory/home-manager" "home-manager-1-link" ""
 check_managed_link "$home/.local/state/home-manager/gcroots/current-home" "" "home-manager-generation"
 
 old_generation=$(readlink -e "$home/.local/state/home-manager/gcroots/current-home" 2>/dev/null || true)
@@ -167,6 +169,8 @@ done < <(find "$home_files" \( -type f -o -type l \) -print0)
 link_managed "$generation/home-path" "$profile_directory/profile-1-link"
 link_managed "profile-1-link" "$profile_directory/profile"
 link_managed "$profile_directory/profile" "$home/.nix-profile"
+link_managed "$generation" "$profile_directory/home-manager-1-link"
+link_managed "home-manager-1-link" "$profile_directory/home-manager"
 link_managed "$generation" "$home/.local/state/home-manager/gcroots/current-home"
 
 env \

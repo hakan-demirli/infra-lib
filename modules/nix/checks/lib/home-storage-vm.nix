@@ -187,6 +187,7 @@ pkgs.testers.runNixOSTest {
     machine.succeed("test -e /home/alice/.boot-replayed")
     machine.succeed("test \"$(readlink /home/alice/.local/state/nix/profiles/profile)\" = profile-1-link")
     machine.succeed("test \"$(readlink -e /home/alice/.nix-profile)\" = \"$(readlink -e ${aliceGeneration}/home-path)\"")
+    machine.succeed("test \"$(readlink -e /home/alice/.local/state/nix/profiles/home-manager)\" = ${aliceGeneration}")
 
     machine.succeed("test \"$(stat -c %d:%i /home/bob)\" = \"$(stat -c %d:%i /persist/home/bob/root)\"")
     machine.succeed("test \"$(readlink /home/bob/.cache)\" = /home/bob/.storage/temporary/.cache")
