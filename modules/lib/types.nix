@@ -775,7 +775,7 @@ let
       kernel_package = mkOption {
         type = nullOr str;
         default = null;
-        example = "linuxPackages_5_15";
+        example = "linuxPackages_6_1";
       };
     };
   };

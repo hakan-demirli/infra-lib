@@ -109,9 +109,11 @@ let
       ];
     };
     boot = {
-      kernel_package = "linuxPackages_5_15";
+      kernel_package = "linuxPackages_6_1";
     };
   };
+
+  pinnedKernel = pkgs.${testHost.boot.kernel_package}.kernel;
 in
 pkgs.testers.runNixOSTest {
   name = "dev-fpga";
@@ -164,8 +166,8 @@ pkgs.testers.runNixOSTest {
     stage("kernel pin")
     uname_r = dev_fpga.succeed("uname -r").strip()
     say(f"uname -r = {uname_r}")
-    assert uname_r.startswith("5.15."), (
-        f"FAIL: kernel pinned to linuxPackages_5_15 but uname -r = {uname_r!r}"
+    assert uname_r == "${pinnedKernel.modDirVersion}", (
+        f"FAIL: kernel pinned to ${testHost.boot.kernel_package} but uname -r = {uname_r!r}"
     )
 
     stage("install test private keys")
