@@ -6,8 +6,8 @@
   ...
 }:
 let
-  cfg = config.services.cluster-gitea;
-  gitea = config.services.gitea;
+  cfg = config.services.cluster-forgejo;
+  forgejo = config.services.forgejo;
   impermanenceEnabled = host != null && (host.impermanence.enable or false);
 
   useSops = cfg.admin.password.source == "sops";
@@ -25,29 +25,29 @@ let
       cfg.admin.password.hostLocalPath;
 
   provisionAdmin = pkgs.writeShellApplication {
-    name = "gitea-provision-admin";
+    name = "forgejo-provision-admin";
     runtimeInputs = [
       pkgs.gawk
-      gitea.package
+      forgejo.package
     ];
     text = ''
       username=${lib.escapeShellArg cfg.admin.username}
       password_file="$CREDENTIALS_DIRECTORY/admin-password"
 
       if [[ ! -s "$password_file" ]]; then
-        echo "fatal: the Gitea administrator password is missing or empty" >&2
+        echo "fatal: the Forgejo administrator password is missing or empty" >&2
         exit 1
       fi
 
       password="$(<"$password_file")"
 
-      if gitea admin user list | awk -v user="$username" 'NR > 1 && $2 == user { found = 1 } END { exit !found }'; then
-        gitea admin user change-password \
+      if forgejo admin user list | awk -v user="$username" 'NR > 1 && $2 == user { found = 1 } END { exit !found }'; then
+        forgejo admin user change-password \
           --username "$username" \
           --password "$password" \
           --must-change-password=false
       else
-        gitea admin user create \
+        forgejo admin user create \
           --admin \
           --username "$username" \
           --email ${lib.escapeShellArg cfg.admin.email} \
@@ -58,7 +58,7 @@ let
   };
 in
 {
-  options.services.cluster-gitea = {
+  options.services.cluster-forgejo = {
     domain = lib.mkOption {
       type = lib.types.str;
       description = ''
@@ -77,7 +77,7 @@ in
       type = lib.types.port;
       default = 22;
       description = ''
-        Port advertised in SSH clone URLs. Gitea does not run its own SSH
+        Port advertised in SSH clone URLs. Forgejo does not run its own SSH
         daemon here; it publishes forced-command entries in the service
         user's authorized_keys and lets the host sshd dispatch them.
       '';
@@ -121,16 +121,16 @@ in
         {
           assertion =
             !useSops || (cfg.admin.password.sopsKeyName != null && cfg.admin.password.hostLocalPath == null);
-          message = "cluster-gitea admin.password.source=sops requires only admin.password.sopsKeyName.";
+          message = "cluster-forgejo admin.password.source=sops requires only admin.password.sopsKeyName.";
         }
         {
           assertion =
             useSops || (cfg.admin.password.hostLocalPath != null && cfg.admin.password.sopsKeyName == null);
-          message = "cluster-gitea admin.password.source=host-local requires only admin.password.hostLocalPath.";
+          message = "cluster-forgejo admin.password.source=host-local requires only admin.password.hostLocalPath.";
         }
       ];
 
-      services.gitea = {
+      services.forgejo = {
         enable = true;
         lfs.enable = true;
         database.type = "sqlite3";
@@ -157,25 +157,25 @@ in
         };
       };
 
-      systemd.services.gitea-admin = {
-        description = "Provision the declarative Gitea administrator";
+      systemd.services.forgejo-admin = {
+        description = "Provision the declarative Forgejo administrator";
         wantedBy = [ "multi-user.target" ];
-        after = [ "gitea.service" ];
-        requires = [ "gitea.service" ];
+        after = [ "forgejo.service" ];
+        requires = [ "forgejo.service" ];
 
         environment = {
-          USER = gitea.user;
-          HOME = gitea.stateDir;
-          GITEA_WORK_DIR = gitea.stateDir;
-          GITEA_CUSTOM = gitea.customDir;
+          USER = forgejo.user;
+          HOME = forgejo.stateDir;
+          FORGEJO_WORK_DIR = forgejo.stateDir;
+          FORGEJO_CUSTOM = forgejo.customDir;
         };
 
         serviceConfig = {
           Type = "oneshot";
           RemainAfterExit = true;
-          User = gitea.user;
-          Group = gitea.group;
-          WorkingDirectory = gitea.stateDir;
+          User = forgejo.user;
+          Group = forgejo.group;
+          WorkingDirectory = forgejo.stateDir;
           LoadCredential = [ "admin-password:${passwordPath}" ];
           ExecStart = lib.getExe provisionAdmin;
           UMask = "0027";
@@ -185,8 +185,8 @@ in
       environment.persistence = lib.mkIf impermanenceEnabled {
         "/persist/system".directories = [
           {
-            directory = gitea.stateDir;
-            inherit (gitea) user group;
+            directory = forgejo.stateDir;
+            inherit (forgejo) user group;
             mode = "0750";
           }
         ];
@@ -196,7 +196,7 @@ in
     (lib.mkIf useSops {
       sops.secrets.${sopsKeyName} = { };
 
-      systemd.services.gitea-admin = {
+      systemd.services.forgejo-admin = {
         after = [ "sops-install-secrets.service" ];
         requires = [ "sops-install-secrets.service" ];
       };

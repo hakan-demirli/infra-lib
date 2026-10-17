@@ -6,7 +6,7 @@ let
 
   adminUser = "forge-admin";
   adminPassword = "correct-horse-battery-staple";
-  passwordFile = "/var/lib/gitea-test/admin-password";
+  passwordFile = "/var/lib/forgejo-test/admin-password";
 
   sopsOptionStubs = {
     options.sops.secrets = lib.mkOption {
@@ -16,13 +16,13 @@ let
   };
 in
 pkgs.testers.runNixOSTest {
-  name = "gitea";
+  name = "forgejo";
 
   nodes.forge = {
     imports = [
       vmImpermanence
       sopsOptionStubs
-      ../../../services/gitea.nix
+      ../../../services/forgejo.nix
     ];
 
     _module.args.host = {
@@ -32,7 +32,7 @@ pkgs.testers.runNixOSTest {
 
     services.openssh.enable = true;
 
-    services.cluster-gitea = {
+    services.cluster-forgejo = {
       domain = "forge";
       admin = {
         username = adminUser;
@@ -44,10 +44,10 @@ pkgs.testers.runNixOSTest {
       };
     };
 
-    systemd.services.gitea-test-password = {
-      description = "Seed the Gitea administrator password for THIS TEST ONLY";
+    systemd.services.forgejo-test-password = {
+      description = "Seed the Forgejo administrator password for THIS TEST ONLY";
       wantedBy = [ "multi-user.target" ];
-      before = [ "gitea-admin.service" ];
+      before = [ "forgejo-admin.service" ];
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
@@ -93,11 +93,11 @@ pkgs.testers.runNixOSTest {
 
     start_all()
 
-    forge.wait_for_unit("gitea.service")
+    forge.wait_for_unit("forgejo.service")
     forge.wait_for_open_port(3001)
-    forge.wait_for_unit("gitea-admin.service")
+    forge.wait_for_unit("forgejo-admin.service")
 
-    app_ini = "/var/lib/gitea/custom/conf/app.ini"
+    app_ini = "/var/lib/forgejo/custom/conf/app.ini"
     forge.succeed("grep -q '^DISABLE_REGISTRATION *= *true' " + app_ini)
     forge.succeed("grep -q '^ROOT_URL *= *http://forge:3001/$' " + app_ini)
 
@@ -116,18 +116,18 @@ pkgs.testers.runNixOSTest {
     api_post("/user/keys", {"title": "test-key", "key": pubkey})
 
     repo = json.loads(api_post("/user/repos", {"name": "demo", "auto_init": True}))
-    assert repo["ssh_url"] == "gitea@forge:${adminUser}/demo.git", repo["ssh_url"]
+    assert repo["ssh_url"] == "ssh://forgejo@forge/${adminUser}/demo.git", repo["ssh_url"]
 
     forge.succeed(
         "GIT_SSH_COMMAND='ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null' "
-        "git clone gitea@localhost:${adminUser}/demo.git /tmp/demo"
+        "git clone ssh://forgejo@localhost/${adminUser}/demo.git /tmp/demo"
     )
     forge.succeed("test -f /tmp/demo/README.md")
 
-    forge.succeed("systemctl restart gitea-admin.service")
+    forge.succeed("systemctl restart forgejo-admin.service")
     reprovisioned = json.loads(api_get("/user"))
     assert reprovisioned["login"] == "${adminUser}", reprovisioned
 
-    print("GITEA VERIFICATIONS PASSED")
+    print("FORGEJO VERIFICATIONS PASSED")
   '';
 }
