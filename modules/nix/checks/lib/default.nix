@@ -74,7 +74,7 @@
   bootstrap-tag = import ./bootstrap-tag.nix { inherit pkgs; };
   taildrive = import ./taildrive.nix { inherit pkgs; };
   harmonia = import ./harmonia.nix { inherit pkgs; };
-  gitea = import ./gitea.nix { inherit pkgs inputs; };
+  forgejo = import ./forgejo.nix { inherit pkgs inputs; };
   cephfs = import ./cephfs.nix {
     pkgs = cephPkgs;
     inherit self;
