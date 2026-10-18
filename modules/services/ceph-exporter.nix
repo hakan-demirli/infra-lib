@@ -37,51 +37,55 @@ in
     }
 
     (lib.mkIf cfg.enable {
-      systemd.services."ceph-mgr-${cfg.mgrInstance}".environment.PYTHONPATH =
-        lib.makeSearchPath "lib/python3.12/site-packages"
-          [
-            pkgs.python312Packages.cherrypy
-            pkgs.python312Packages.pyyaml
-            pkgs.python312Packages.more-itertools
-            pkgs.python312Packages.jaraco-collections
-            pkgs.python312Packages.jaraco-functools
-            pkgs.python312Packages.zc-lockfile
-            pkgs.python312Packages.cheroot
-            pkgs.python312Packages.portend
-            pkgs.python312Packages.tempora
-            pkgs.python312Packages.pytz
-            pkgs.python312Packages.jaraco-text
-            pkgs.python312Packages.jaraco-context
-          ];
-
       systemd.services."ceph-mgr-prometheus-enable" = {
         description = "Enable ceph-mgr prometheus module and pin port";
         after = [ "ceph-mgr-${cfg.mgrInstance}.service" ];
-        path = [ pkgs.ceph ];
+        path = [
+          pkgs.ceph
+          pkgs.iproute2
+          pkgs.jq
+        ];
         serviceConfig = {
           Type = "oneshot";
           RemainAfterExit = true;
         };
         script = ''
-          set -eu
-          for i in $(seq 1 120); do
-            if ceph mgr module ls 2>/dev/null | grep -q '"prometheus"'; then
-              break
-            fi
-            sleep 1
-          done
-          ceph mgr module enable prometheus
-          ceph config set mgr mgr/prometheus/server_port ${toString cfg.listenPort}
+          set -euo pipefail
+
+          wait_until() {
+            local seconds=$1
+            shift
+            for _ in $(seq "$seconds"); do
+              if "$@"; then
+                return 0
+              fi
+              sleep 1
+            done
+            return 1
+          }
+
+          prometheus_available() {
+            ceph mgr module ls --format json \
+              | jq -e '(.enabled_modules | index("prometheus")) or any(.disabled_modules[]; .name == "prometheus")' > /dev/null
+          }
+
+          prometheus_listening() {
+            ss -Htln "sport = :${toString cfg.listenPort}" | grep -q .
+          }
+
+          if ! wait_until 120 prometheus_available; then
+            echo "ceph-mgr did not report the prometheus module within 120 seconds" >&2
+            exit 1
+          fi
+
           ceph config set mgr mgr/prometheus/server_addr 0.0.0.0
-          ceph mgr module disable prometheus
+          ceph config set mgr mgr/prometheus/server_port ${toString cfg.listenPort}
           ceph mgr module enable prometheus
-          for i in $(seq 1 60); do
-            if ${pkgs.iproute2}/bin/ss -ltn | grep -q ":${toString cfg.listenPort} "; then
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "WARN: prometheus module enabled but :${toString cfg.listenPort} not listening" >&2
+
+          if ! wait_until 60 prometheus_listening; then
+            echo "ceph-mgr prometheus module is enabled but :${toString cfg.listenPort} is not listening" >&2
+            exit 1
+          fi
         '';
       };
 
