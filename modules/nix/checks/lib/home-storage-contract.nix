@@ -249,11 +249,14 @@ pkgs.runCommand "home-storage-contract"
     test "$(readlink "$symlinkHome/.bashrc")" = ${foreignFile}
     test ! -e "$symlinkHome/.config/systemd/user/fixture.service"
 
-    legacyHome="$TMPDIR/legacy-home"
-    mkdir -p "$legacyHome/.storage/control/generations/legacy"
-    ln -s generations/legacy "$legacyHome/.storage/control/current"
-    ${replayExecutable} mike "$legacyHome"
-    test ! -e "$legacyHome/.bashrc"
+    policylessHome="$TMPDIR/policyless-home"
+    mkdir -p "$policylessHome/.storage/control/generations/policyless"
+    ln -s generations/policyless "$policylessHome/.storage/control/current"
+    if ${replayExecutable} mike "$policylessHome"; then
+      echo "home generation replay accepted a current link without a home-storage policy" >&2
+      exit 1
+    fi
+    test ! -e "$policylessHome/.bashrc"
 
     unpublishedHome="$TMPDIR/unpublished-home"
     mkdir -p "$unpublishedHome/.storage/control"

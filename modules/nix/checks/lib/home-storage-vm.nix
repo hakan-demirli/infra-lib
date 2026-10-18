@@ -3,53 +3,71 @@
   self,
 }:
 let
-  mkPolicy =
-    name: temporaryDefault: layout:
-    pkgs.runCommand "home-storage-${name}-generation" { } ''
-      mkdir -p "$out"
-      cat > "$out/layout.conf" <<'EOF'
-      ${layout}
-      EOF
-      ${pkgs.lib.optionalString temporaryDefault ''
-        touch "$out/temporary-default"
-      ''}
-    '';
-
   fixtureFile = pkgs.writeText "home-storage-replay-fixture" "fixture\n";
-  aliceBootReplay = pkgs.writeShellScript "home-storage-alice-boot-replay" ''
+  fixtureBootReplay = pkgs.writeShellScript "home-storage-boot-replay" ''
     set -euo pipefail
     touch "$HOME/.boot-replayed"
   '';
-  aliceHomeFiles = pkgs.runCommand "home-storage-alice-home-manager-files" { } ''
+  fixtureHomeFiles = pkgs.runCommand "home-storage-home-manager-files" { } ''
     mkdir -p "$out/.config/systemd/user"
     ln -s ${fixtureFile} "$out/.bashrc"
     ln -s ${fixtureFile} "$out/.config/systemd/user/fixture.service"
   '';
-  aliceHomePath = pkgs.runCommand "home-storage-alice-home-manager-path" { } ''
+  fixtureHomePath = pkgs.runCommand "home-storage-home-manager-path" { } ''
     mkdir -p "$out/bin"
   '';
-  aliceGeneration = pkgs.runCommand "home-storage-alice-home-manager-generation" { } ''
-    mkdir -p "$out/home-storage-policy"
-    ln -s ${aliceHomeFiles} "$out/home-files"
-    ln -s ${aliceHomePath} "$out/home-path"
-    ln -s ${aliceBootReplay} "$out/boot-replay"
-    cat > "$out/home-storage-policy/layout.conf" <<'EOF'
-    d "/home/alice/.storage/persistent/Desktop" 0700 - - - -
-    L "/home/alice/Desktop" - - - - /home/alice/.storage/persistent/Desktop
-    EOF
-    touch "$out/home-storage-policy/temporary-default"
-  '';
-  aliceGenerationId = builtins.unsafeDiscardStringContext (builtins.baseNameOf aliceGeneration);
-  bobGeneration = mkPolicy "bob" false ''
-    d "/home/bob/.storage/temporary/.cache" 0700 - - - -
-    L "/home/bob/.cache" - - - - /home/bob/.storage/temporary/.cache
-    d "/home/bob/.storage/temporary/Existing" 0700 - - - -
-    L "/home/bob/Existing" - - - - /home/bob/.storage/temporary/Existing
-  '';
-  carolGeneration = mkPolicy "carol" true ''
-    d "/home/carol/.storage/persistent/.cache" 0700 - - - -
-    L "/home/carol/.cache" - - - - /home/carol/.storage/persistent/.cache
-  '';
+  mkGeneration =
+    name: temporaryDefault: layout:
+    pkgs.runCommand "home-storage-${name}-home-manager-generation" { } ''
+      mkdir -p "$out/home-storage-policy"
+      ln -s ${fixtureHomeFiles} "$out/home-files"
+      ln -s ${fixtureHomePath} "$out/home-path"
+      ln -s ${fixtureBootReplay} "$out/boot-replay"
+      cat > "$out/home-storage-policy/layout.conf" <<'EOF'
+      ${layout}
+      EOF
+      ${pkgs.lib.optionalString temporaryDefault ''
+        touch "$out/home-storage-policy/temporary-default"
+      ''}
+    '';
+  generations = {
+    alice = mkGeneration "alice" true ''
+      d "/home/alice/.storage/persistent/Desktop" 0700 - - - -
+      L "/home/alice/Desktop" - - - - /home/alice/.storage/persistent/Desktop
+    '';
+    bob = mkGeneration "bob" false ''
+      d "/home/bob/.storage/temporary/.cache" 0700 - - - -
+      L "/home/bob/.cache" - - - - /home/bob/.storage/temporary/.cache
+      d "/home/bob/.storage/temporary/Existing" 0700 - - - -
+      L "/home/bob/Existing" - - - - /home/bob/.storage/temporary/Existing
+    '';
+    carol = mkGeneration "carol" true ''
+      d "/home/carol/.storage/persistent/.cache" 0700 - - - -
+      L "/home/carol/.cache" - - - - /home/carol/.storage/persistent/.cache
+    '';
+  };
+  generationId =
+    username: builtins.unsafeDiscardStringContext (builtins.baseNameOf generations.${username});
+  publish =
+    username:
+    let
+      control = "/persist/home/${username}/control";
+      owner = {
+        user = username;
+        group = "users";
+      };
+    in
+    {
+      "${control}/generations".d = owner // {
+        mode = "0700";
+      };
+      "${control}/generations/${generationId username}".L = owner // {
+        argument = toString generations.${username};
+      };
+      "${control}/current".L = owner // {
+        argument = "generations/${generationId username}/home-storage-policy";
+      };
+    };
 
   host = {
     id = "home-storage-vm";
@@ -110,63 +128,22 @@ pkgs.testers.runNixOSTest {
       home = "/home/${username}";
     }) users;
 
-    systemd.tmpfiles.settings."20-home-storage-test" = {
-      "/persist/home/alice/control/generations".d = {
-        user = "alice";
-        group = "users";
-        mode = "0700";
+    systemd.tmpfiles.settings."20-home-storage-test" =
+      publish "alice"
+      // publish "bob"
+      // publish "carol"
+      // {
+        "/persist/home/bob/root/Existing".d = {
+          user = "bob";
+          group = "users";
+          mode = "0700";
+        };
+        "/persist/home/bob/root/Existing/unmanaged".f = {
+          user = "bob";
+          group = "users";
+          mode = "0600";
+        };
       };
-      "/persist/home/alice/control/generations/${aliceGenerationId}".L = {
-        user = "alice";
-        group = "users";
-        argument = toString aliceGeneration;
-      };
-      "/persist/home/alice/control/current".L = {
-        user = "alice";
-        group = "users";
-        argument = "generations/${aliceGenerationId}/home-storage-policy";
-      };
-      "/persist/home/bob/control/generations".d = {
-        user = "bob";
-        group = "users";
-        mode = "0700";
-      };
-      "/persist/home/bob/control/generations/legacy".L = {
-        user = "bob";
-        group = "users";
-        argument = toString bobGeneration;
-      };
-      "/persist/home/bob/control/current".L = {
-        user = "bob";
-        group = "users";
-        argument = "generations/legacy";
-      };
-      "/persist/home/carol/control/generations".d = {
-        user = "carol";
-        group = "users";
-        mode = "0700";
-      };
-      "/persist/home/carol/control/generations/legacy".L = {
-        user = "carol";
-        group = "users";
-        argument = toString carolGeneration;
-      };
-      "/persist/home/carol/control/current".L = {
-        user = "carol";
-        group = "users";
-        argument = "generations/legacy";
-      };
-      "/persist/home/bob/root/Existing".d = {
-        user = "bob";
-        group = "users";
-        mode = "0700";
-      };
-      "/persist/home/bob/root/Existing/unmanaged".f = {
-        user = "bob";
-        group = "users";
-        mode = "0600";
-      };
-    };
 
     system.stateVersion = "26.05";
   };
@@ -186,8 +163,8 @@ pkgs.testers.runNixOSTest {
     machine.succeed("test -L /home/alice/.config/systemd/user/fixture.service")
     machine.succeed("test -e /home/alice/.boot-replayed")
     machine.succeed("test \"$(readlink /home/alice/.local/state/nix/profiles/profile)\" = profile-1-link")
-    machine.succeed("test \"$(readlink -e /home/alice/.nix-profile)\" = \"$(readlink -e ${aliceGeneration}/home-path)\"")
-    machine.succeed("test \"$(readlink -e /home/alice/.local/state/nix/profiles/home-manager)\" = ${aliceGeneration}")
+    machine.succeed("test \"$(readlink -e /home/alice/.nix-profile)\" = \"$(readlink -e ${generations.alice}/home-path)\"")
+    machine.succeed("test \"$(readlink -e /home/alice/.local/state/nix/profiles/home-manager)\" = ${generations.alice}")
 
     machine.succeed("test \"$(stat -c %d:%i /home/bob)\" = \"$(stat -c %d:%i /persist/home/bob/root)\"")
     machine.succeed("test \"$(readlink /home/bob/.cache)\" = /home/bob/.storage/temporary/.cache")
@@ -214,7 +191,7 @@ pkgs.testers.runNixOSTest {
     machine.succeed("systemctl is-active user@1002.service")
     machine.fail("systemctl start user@1001.service")
     machine.fail("systemctl is-active user@1001.service")
-    machine.succeed("runuser -u alice -- ln -sfn generations/${aliceGenerationId}/home-storage-policy /persist/home/alice/control/current")
+    machine.succeed("runuser -u alice -- ln -sfn generations/${generationId "alice"}/home-storage-policy /persist/home/alice/control/current")
     machine.succeed("systemctl restart home-storage-layout-alice.service")
     machine.succeed("test \"$(stat -c %d:%i /home/bob)\" = \"$(stat -c %d:%i /persist/home/bob/root)\"")
 
