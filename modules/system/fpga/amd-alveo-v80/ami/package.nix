@@ -1,6 +1,7 @@
 {
   fetchFromGitHub,
   kernel,
+  kernelModuleMakeFlags,
   lib,
   stdenv,
 }:
@@ -63,7 +64,8 @@ stdenv.mkDerivation (finalAttrs: {
   buildPhase = ''
     runHook preBuild
     pushd driver
-    make KERNEL_DIR=${kernel.dev}/lib/modules/${kernel.modDirVersion}/build
+    make ${lib.escapeShellArgs kernelModuleMakeFlags} \
+      KERNEL_DIR=${kernel.dev}/lib/modules/${kernel.modDirVersion}/build
     popd
     pushd api
     make
@@ -76,7 +78,9 @@ stdenv.mkDerivation (finalAttrs: {
 
   installPhase = ''
     runHook preInstall
-    install -Dm0444 driver/ami.ko $out/lib/modules/${kernel.modDirVersion}/extra/ami.ko
+    make -C ${kernel.dev}/lib/modules/${kernel.modDirVersion}/build M=$PWD/driver \
+      ${lib.escapeShellArgs kernelModuleMakeFlags} \
+      INSTALL_MOD_PATH=$out INSTALL_MOD_DIR=extra modules_install
     install -Dm0755 app/build/ami_tool $out/bin/ami_tool
     install -Dm0644 api/build/libami.a $out/lib/libami.a
     install -d $out/include/ami
