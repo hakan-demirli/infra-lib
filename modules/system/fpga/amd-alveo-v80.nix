@@ -16,9 +16,7 @@ let
       device.pciAddress
     ]) devices
   );
-  ami = pkgs.callPackage ./amd-alveo-v80/ami/package.nix {
-    inherit (config.boot.kernelPackages) kernel;
-  };
+  ami = config.boot.kernelPackages.callPackage ./amd-alveo-v80/ami/package.nix { };
 in
 {
   options.hardware.fpga.amdAlveoV80 = {
