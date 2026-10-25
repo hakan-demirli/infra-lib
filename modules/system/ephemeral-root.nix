@@ -10,7 +10,6 @@ in
 {
   config = lib.mkIf gate {
     boot.initrd = {
-      systemd.enable = true;
       supportedFilesystems = [ "btrfs" ];
       systemd.services.rollback-root = {
         description = "Rollback btrfs root to blank snapshot";

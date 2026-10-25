@@ -42,7 +42,6 @@ let
         neededForBoot = true;
       };
     };
-    boot.initrd.systemd.enable = true;
     services.openssh.enable = true;
     system.stateVersion = "26.05";
   };
