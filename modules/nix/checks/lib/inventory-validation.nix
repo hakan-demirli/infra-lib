@@ -509,6 +509,31 @@ let
       };
     };
 
+    hibernation-rejects-always-on = {
+      desc = "a hibernating host rejects always_on=true";
+      expectFail = true;
+      files = {
+        "users/inventory-user.nix" = validUser "inventory-user";
+        "deployment-roles/compute-role.nix" = validDeploymentRole "compute-role";
+        "hosts/lab/h-sleeper.nix" = validHost "h-sleeper" ''
+          labels.hibernation = "true";
+        '';
+      };
+    };
+
+    hibernation-accepts-optional-monitoring = {
+      desc = "a hibernating host with always_on=false loads";
+      expectFail = false;
+      files = {
+        "users/inventory-user.nix" = validUser "inventory-user";
+        "deployment-roles/compute-role.nix" = validDeploymentRole "compute-role";
+        "hosts/lab/h-sleeper.nix" = validHost "h-sleeper" ''
+          labels.hibernation = "true";
+          monitoring.always_on = false;
+        '';
+      };
+    };
+
     deploy-accepts-one-controller-and-a-dated-hold = {
       desc = "one provisioned deploy controller and a reasoned hold load";
       expectFail = false;
