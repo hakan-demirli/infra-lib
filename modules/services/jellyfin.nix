@@ -7,10 +7,14 @@ let
   impermanenceEnabled = host != null && (host.impermanence.enable or false);
 in
 {
-  services.jellyfin = {
-    enable = true;
-    openFirewall = true;
-  };
+  imports = [ ../common/tailnet-only-ports.nix ];
+
+  services.jellyfin.enable = true;
+
+  cluster.firewall.tailnetOnlyTCPPorts = [
+    8096
+    8920
+  ];
 
   environment.persistence = lib.mkIf impermanenceEnabled {
     "/persist/system".directories = [

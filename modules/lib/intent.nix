@@ -307,6 +307,24 @@ let
     );
   };
 
+  roleTagOf =
+    cid: role:
+    {
+      controller = controllerTagOf cid;
+      login =
+        if (loginNodesOfCluster.${cid} or [ ]) != [ ] then "tag:${baseOfCluster cid}-login" else null;
+      compute = computeTagOf cid;
+      storage = storageTagOf cid;
+    }
+    .${role};
+
+  serviceRules = mapAttrsToList (
+    name: s:
+    mkRule (map broadTagOf (
+      [ s.cluster ] ++ s.clients
+    )) (roleTagOf s.cluster s.role) (toString s.port) "service:${name}"
+  ) (inventory.services or { });
+
   meshRules = concatMap (
     cid:
     let
@@ -417,6 +435,7 @@ let
     ++ inboxRules
     ++ deployRules
     ++ slurmRules
+    ++ serviceRules
     ++ meshRules
     ++ loginToComputeRules
     ++ computeToStorageRulesIntra

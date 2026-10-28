@@ -84,6 +84,13 @@ let
     ];
     controllerNodesOfCluster.personal = [ "controller" ];
     computeNodesOfCluster.personal = [ "compute" ];
+    services.notify = {
+      port = 8111;
+      role = "controller";
+      clients = [ ];
+      cluster = "personal";
+      hosts = [ "controller" ];
+    };
     deployController = "admin-client";
     deployableHosts = [ "admin-client" ];
   };
@@ -156,6 +163,14 @@ pkgs.testers.runNixOSTest {
     assert {"action": "accept", "src": ["tag:cluster-personal"], "dst": [
         "tag:cluster-personal-compute:6818",
     ]} in admin_policy["acls"], admin_policy
+    assert {"action": "accept", "src": ["tag:cluster-personal"], "dst": [
+        "tag:cluster-personal-controller:8111",
+    ]} in admin_policy["acls"], admin_policy
+    assert not any(
+        dst.endswith(":8111")
+        for rule in policy["acls"]
+        for dst in rule["dst"]
+    ), policy
     assert {"action": "accept", "src": [
         "tag:cluster-personal-controller",
         "tag:cluster-personal-compute",

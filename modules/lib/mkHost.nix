@@ -52,6 +52,7 @@ let
     (libRoot + "/modules/common/auto-upgrade.nix")
     (libRoot + "/modules/common/smartctl-exporter.nix")
     (libRoot + "/modules/common/ipmi-exporter.nix")
+    (libRoot + "/modules/common/cluster-services.nix")
     (libRoot + "/modules/common/vector-shipper.nix")
     (libRoot + "/modules/common/sshd.nix")
     (libRoot + "/modules/common/overlays.nix")

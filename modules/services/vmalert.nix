@@ -33,6 +33,8 @@ let
       lib.mapAttrsToList renderOne nixEntries;
 in
 {
+  imports = [ ../common/tailnet-only-ports.nix ];
+
   options.services.cluster-vmalert = {
     listenPort = lib.mkOption {
       type = lib.types.port;
@@ -80,6 +82,6 @@ in
       };
     };
 
-    networking.firewall.allowedTCPPorts = [ cfg.listenPort ];
+    cluster.firewall.tailnetOnlyTCPPorts = [ cfg.listenPort ];
   };
 }

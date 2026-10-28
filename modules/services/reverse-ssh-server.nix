@@ -3,6 +3,8 @@ let
   cfg = config.services.reverse-ssh-server;
 in
 {
+  imports = [ ../common/tailnet-only-ports.nix ];
+
   options.services.reverse-ssh-server = {
     enable = lib.mkOption {
       type = lib.types.bool;
@@ -13,6 +15,11 @@ in
       type = lib.types.listOf lib.types.int;
       default = [ ];
       description = "TCP ports to allow in firewall";
+    };
+    tailnetOnly = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = "Whether to open allowedTCPPorts only on the tailnet interface instead of every interface.";
     };
   };
 
@@ -38,8 +45,10 @@ in
 
       networking.firewall = {
         enable = true;
-        inherit (cfg) allowedTCPPorts;
+        allowedTCPPorts = lib.mkIf (!cfg.tailnetOnly) cfg.allowedTCPPorts;
       };
+
+      cluster.firewall.tailnetOnlyTCPPorts = lib.mkIf cfg.tailnetOnly cfg.allowedTCPPorts;
     })
   ];
 }

@@ -621,6 +621,23 @@ in
         ) (filter (g: isActiveUser g.user) c.access.users)
       ) (attrNames activeClusters);
 
+      roleTagOf =
+        cid: role:
+        {
+          controller = controllerTagOf cid;
+          login =
+            if (inventory.loginNodesOfCluster.${cid} or [ ]) != [ ] then "tag:${baseOf cid}-login" else null;
+          compute = computeTagOf cid;
+          storage = storageTagOf cid;
+        }
+        .${role};
+
+      serviceRules = mapAttrsToList (_: s: {
+        action = "accept";
+        src = map broadTagOf ([ s.cluster ] ++ s.clients);
+        dst = [ "${roleTagOf s.cluster s.role}:${toString s.port}" ];
+      }) (inventory.services or { });
+
       acls = [
         adminRule
         driveRule
@@ -631,6 +648,7 @@ in
       ++ inboxRules
       ++ deployRules
       ++ slurmRules
+      ++ serviceRules
       ++ computeMeshRules
       ++ loginToComputeRules
       ++ computeToStorageRules

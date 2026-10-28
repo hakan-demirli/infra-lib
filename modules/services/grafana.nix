@@ -11,6 +11,8 @@ let
   impermanenceEnabled = host != null && (host.impermanence.enable or false);
 in
 {
+  imports = [ ../common/tailnet-only-ports.nix ];
+
   options.services.cluster-grafana = {
     listenPort = lib.mkOption {
       type = lib.types.port;
@@ -92,6 +94,6 @@ in
       ];
     };
 
-    networking.firewall.allowedTCPPorts = [ cfg.listenPort ];
+    cluster.firewall.tailnetOnlyTCPPorts = [ cfg.listenPort ];
   };
 }

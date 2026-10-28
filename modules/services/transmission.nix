@@ -23,13 +23,18 @@ in
       type = lib.types.str;
       default = "127.0.0.1,::1";
     };
+    openPeerPorts = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "Whether to open the BitTorrent peer port on every interface for incoming peers.";
+    };
   };
 
   config = {
     services.transmission = {
       enable = true;
       package = pkgs.transmission_4;
-      openPeerPorts = true;
+      inherit (cfg) openPeerPorts;
       openRPCPort = false;
       performanceNetParameters = true;
       settings = {
