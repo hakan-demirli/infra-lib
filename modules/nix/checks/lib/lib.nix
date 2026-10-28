@@ -236,10 +236,6 @@ rec {
         };
         timesyncd.enable = lib.mkForce false;
         openssh.enable = true;
-        slurm.extraConfig = lib.mkAfter ''
-          SlurmdParameters=config_overrides
-          ReturnToService=2
-        '';
       };
       virtualisation = {
         memorySize = 2048;

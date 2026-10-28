@@ -22,6 +22,13 @@ let
       ramMb = 1536;
     }
   ];
+  quickTimeout =
+    { lib, ... }:
+    {
+      services.slurm.extraConfig = lib.mkAfter ''
+        SlurmdTimeout=10
+      '';
+    };
 in
 pkgs.testers.runNixOSTest {
   name = "slurm-rebooted-node-returns";
@@ -33,6 +40,7 @@ pkgs.testers.runNixOSTest {
           hostName = "controller";
           inherit clusterNodes;
         })
+        quickTimeout
       ];
       networking.extraHosts = clusterHosts;
     };
@@ -44,6 +52,7 @@ pkgs.testers.runNixOSTest {
           inherit clusterNodes;
           adopt = false;
         })
+        quickTimeout
       ];
       networking.extraHosts = clusterHosts;
     };
@@ -59,8 +68,11 @@ pkgs.testers.runNixOSTest {
     controller.wait_until_succeeds("sinfo -h -N -n compute1 -o '%T' | grep -qx idle", timeout=120)
     booted = boot_time()
 
-    with subtest("a rebooted compute node registers again"):
+    with subtest("an offline compute node is marked down"):
         compute1.shutdown()
+        controller.wait_until_succeeds("sinfo -h -N -n compute1 -o '%T' | grep -q '^down'", timeout=120)
+
+    with subtest("the rebooted compute node registers again"):
         compute1.start()
         compute1.wait_for_unit("slurmd.service")
         controller.wait_until_succeeds(
