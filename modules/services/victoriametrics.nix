@@ -107,6 +107,8 @@ let
   scrapeConfigFile = pkgs.writeText "vm-scrape.yml" (builtins.toJSON scrapeConfig);
 in
 {
+  imports = [ ../common/tailnet-only-ports.nix ];
+
   options.services.cluster-victoriametrics = {
     listenPort = lib.mkOption {
       type = lib.types.port;
@@ -176,6 +178,6 @@ in
       ];
     };
 
-    networking.firewall.allowedTCPPorts = [ cfg.listenPort ];
+    cluster.firewall.tailnetOnlyTCPPorts = [ cfg.listenPort ];
   };
 }

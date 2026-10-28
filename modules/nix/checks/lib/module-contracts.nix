@@ -193,6 +193,16 @@ let
   tailnetPortsOf =
     config:
     config.networking.firewall.interfaces.${config.services.tailscale.interfaceName}.allowedTCPPorts;
+  jellyfin = evalModule "/modules/services/jellyfin.nix" { };
+  reverseSsh =
+    tailnetOnly:
+    evalModule "/modules/services/reverse-ssh-server.nix" {
+      services.reverse-ssh-server = {
+        enable = true;
+        allowedTCPPorts = [ 42001 ];
+        inherit tailnetOnly;
+      };
+    };
 
   checks = {
     intel-host-loads-intel-microcode =
@@ -231,6 +241,20 @@ let
     cluster-services-reject-global-port = hasFailure "tailnetOnlyTCPPorts 8317" (evalClusterServices {
       networking.firewall.allowedTCPPorts = [ 8317 ];
     });
+    jellyfin-opens-only-on-tailnet =
+      lib.all (port: lib.elem port (tailnetPortsOf jellyfin)) [
+        8096
+        8920
+      ]
+      && !lib.elem 8096 jellyfin.networking.firewall.allowedTCPPorts
+      && !hasFailure "tailnetOnlyTCPPorts" jellyfin;
+    reverse-ssh-server-public-by-default =
+      lib.elem 42001 (reverseSsh false).networking.firewall.allowedTCPPorts
+      && !lib.elem 42001 (tailnetPortsOf (reverseSsh false));
+    reverse-ssh-server-tailnet-only =
+      lib.elem 42001 (tailnetPortsOf (reverseSsh true))
+      && !lib.elem 42001 (reverseSsh true).networking.firewall.allowedTCPPorts
+      && !hasFailure "tailnetOnlyTCPPorts" (reverseSsh true);
     base-kills-single-processes-early =
       base.services.earlyoom.enable && !lib.elem "-g" base.services.earlyoom.extraArgs;
     base-compresses-swap-with-shrinker =

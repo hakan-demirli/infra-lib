@@ -242,6 +242,8 @@ let
   };
 in
 {
+  imports = [ ../common/tailnet-only-ports.nix ];
+
   options.services.cluster-alertmanager = {
     listenPort = lib.mkOption {
       type = lib.types.port;
@@ -376,6 +378,8 @@ in
   };
 
   config = {
+    cluster.firewall.tailnetOnlyTCPPorts = [ cfg.listenPort ];
+
     assertions = [
       {
         assertion =
@@ -389,7 +393,6 @@ in
       alertmanager = {
         enable = true;
         port = cfg.listenPort;
-        openFirewall = true;
         configuration = {
           global = { };
           templates = [ notificationTemplate ];
