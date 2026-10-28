@@ -11,6 +11,8 @@ let
   bootHealthUnits =
     lib.optional config.services.openssh.enable "sshd.service"
     ++ lib.optional config.services.tailscale.enable "tailscaled.service";
+  countsBoots =
+    config.boot.loader.systemd-boot.enable && config.boot.loader.systemd-boot.bootCounting.enable;
 in
 {
   assertions = [
@@ -32,11 +34,20 @@ in
     grub.efiInstallAsRemovable = lib.mkIf grubEfi (lib.mkDefault (registration == "fallback"));
   };
 
-  systemd.targets.boot-complete =
-    lib.mkIf
-      (config.boot.loader.systemd-boot.enable && config.boot.loader.systemd-boot.bootCounting.enable)
-      {
-        requires = bootHealthUnits;
-        after = bootHealthUnits;
-      };
+  systemd.services.boot-health-check = lib.mkIf (countsBoots && bootHealthUnits != [ ]) {
+    description = "Check that remote access started before the boot is marked good";
+    wants = bootHealthUnits;
+    after = bootHealthUnits;
+    before = [ "boot-complete.target" ];
+    requiredBy = [ "boot-complete.target" ];
+    restartIfChanged = false;
+    unitConfig.X-StopOnRemoval = false;
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      ExecStart = map (
+        unit: "${config.systemd.package}/bin/systemctl is-active --quiet ${unit}"
+      ) bootHealthUnits;
+    };
+  };
 }

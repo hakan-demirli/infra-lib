@@ -46,10 +46,18 @@ pkgs.testers.runNixOSTest {
               f"grep -l 'version Generation {generation} ' /boot/loader/entries/nixos-*.conf"
           ).strip()
 
+      def blessing():
+          return machine.succeed("systemctl show -P InvocationID systemd-bless-boot.service").strip()
+
       machine.start(allow_reboot=True)
       machine.wait_for_unit("systemd-bless-boot.service")
       booted(healthy)
       assert "+" not in entry(1), entry(1)
+
+      blessed = blessing()
+      machine.succeed("systemctl restart sshd.service")
+      machine.wait_for_unit("sshd.service")
+      assert blessing() == blessed, "restarting sshd re-ran systemd-bless-boot"
 
       machine.succeed(f"nix-env -p /nix/var/nix/profiles/system --set {unhealthy}")
       machine.succeed(f"{unhealthy}/bin/switch-to-configuration boot")
