@@ -23,9 +23,10 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25
       - uses: nix-community/cache-nix-action@b05e2d861a8d616a0cd4c91de03de22dfe447f57
         with:
-          primary-key: eval-v3-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
-          restore-prefixes-first-match: eval-v3-${{ runner.os }}-${{ runner.arch }}-
+          primary-key: eval-v4-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}
+          restore-prefixes-first-match: eval-v4-${{ runner.os }}-${{ runner.arch }}-
           gc-max-store-size: 1G
+          save: ${{ github.event_name == 'push' }}
       - id: matrix
         run: |
           set -euo pipefail
