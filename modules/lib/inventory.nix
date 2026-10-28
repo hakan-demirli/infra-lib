@@ -915,7 +915,37 @@ let
       (optional (
         c.network.storage.kind == "none" && c.network.storage.ports_tcp != [ ]
       ) "cluster '${c.id}' declares storage TCP ports while network.storage.kind='none'")
+      (concatLists (
+        mapAttrsToList (
+          name: s:
+          (optional
+            (!any (hid: elem s.role (hostTopologyRolesOf hid)) (effectiveAllClusterHosts.${c.id} or [ ]))
+            "cluster '${c.id}' network.services.${name} is served by role '${s.role}', but the cluster has no '${s.role}' node"
+          )
+          ++ map (
+            cs:
+            optional (
+              !(clusters ? ${cs})
+            ) "cluster '${c.id}' network.services.${name}.clients references unknown cluster '${cs}'"
+          ) s.clients
+        ) c.network.services
+      ))
     ];
+
+  clusterServiceCollisions =
+    let
+      declaring = name: filter (cid: clusters.${cid}.network.services ? ${name}) (attrNames clusters);
+      names = unique (concatMap (c: attrNames c.network.services) (attrValues clusters));
+    in
+    concatMap (
+      name:
+      let
+        cids = declaring name;
+      in
+      optional (
+        length cids > 1
+      ) "service '${name}' is declared by more than one cluster: ${concatStringsSep ", " cids}"
+    ) names;
 
   clusterFsContract =
     c:
@@ -1124,6 +1154,7 @@ let
     studentExpiresAsserts
     adminScopeAsserts
     hostClusterCollisions
+    clusterServiceCollisions
     deployControllerContract
     deploySlurmContract
   ];
@@ -1177,6 +1208,22 @@ let
     controllerNodesOfCluster = mapAttrs (
       _cid: hids: filter (hid: elem "controller" (hostTopologyRolesOf hid)) hids
     ) effectiveAllClusterHosts;
+
+    services = listToAttrs (
+      concatMap (
+        cid:
+        mapAttrsToList (name: s: {
+          inherit name;
+          value = {
+            inherit (s) port role clients;
+            cluster = cid;
+            hosts = filter (hid: elem s.role (hostTopologyRolesOf hid)) (
+              effectiveAllClusterHosts.${cid} or [ ]
+            );
+          };
+        }) clusters.${cid}.network.services
+      ) (filter (cid: clusters.${cid}.state != "retired") (attrNames clusters))
+    );
 
     machineAge = mapAttrs (
       hid: h:

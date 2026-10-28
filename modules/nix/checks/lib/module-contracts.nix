@@ -156,6 +156,44 @@ let
   exporterTailnetPorts =
     exporterFirewall.interfaces.${exporters.services.tailscale.interfaceName}.allowedTCPPorts;
 
+  evalClusterServices =
+    extraModule:
+    (inputs.nixpkgs.lib.nixosSystem {
+      inherit system;
+      specialArgs = {
+        inherit inputs;
+        host.id = "svc-host";
+        cluster.services = {
+          api = {
+            port = 8317;
+            role = "controller";
+            cluster = "fleet";
+            clients = [ ];
+            hosts = [ "svc-host" ];
+          };
+          other = {
+            port = 8318;
+            role = "controller";
+            cluster = "fleet";
+            clients = [ ];
+            hosts = [ "other-host" ];
+          };
+        };
+      };
+      modules = [
+        (self + "/modules/common/cluster-services.nix")
+        {
+          boot.isContainer = true;
+          system.stateVersion = "26.05";
+        }
+        extraModule
+      ];
+    }).config;
+  clusterServices = evalClusterServices { };
+  tailnetPortsOf =
+    config:
+    config.networking.firewall.interfaces.${config.services.tailscale.interfaceName}.allowedTCPPorts;
+
   checks = {
     intel-host-loads-intel-microcode =
       (microcode "intel" true).intel.updateMicrocode && !(microcode "intel" true).amd.updateMicrocode;
@@ -183,6 +221,16 @@ let
             }
           ];
         });
+    cluster-services-open-served-ports-only-on-tailnet =
+      clusterServices.cluster.services.api.port == 8317
+      && !(clusterServices.cluster.services ? other)
+      && lib.elem 8317 (tailnetPortsOf clusterServices)
+      && !lib.elem 8318 (tailnetPortsOf clusterServices)
+      && !lib.elem 8317 clusterServices.networking.firewall.allowedTCPPorts
+      && !hasFailure "tailnetOnlyTCPPorts" clusterServices;
+    cluster-services-reject-global-port = hasFailure "tailnetOnlyTCPPorts 8317" (evalClusterServices {
+      networking.firewall.allowedTCPPorts = [ 8317 ];
+    });
     base-kills-single-processes-early =
       base.services.earlyoom.enable && !lib.elem "-g" base.services.earlyoom.extraArgs;
     base-compresses-swap-with-shrinker =

@@ -1227,6 +1227,33 @@ let
         default = null;
         description = "Tailnet policy namespace for the cluster. This declares ACL names only and never assigns tags to nodes.";
       };
+      services = mkOption {
+        type = attrsOf clusterService;
+        default = { };
+        description = "TCP services that the cluster serves on the tailnet. Each entry generates the ACL rule, the intent model entry and the tailnet-only firewall port of the serving nodes.";
+      };
+    };
+  };
+
+  clusterService = submodule {
+    options = {
+      port = mkOption {
+        type = port;
+      };
+      role = mkOption {
+        type = enum [
+          "controller"
+          "login"
+          "compute"
+          "storage"
+        ];
+        description = "Topology role of the cluster nodes that serve the service.";
+      };
+      clients = mkOption {
+        type = listOf slug;
+        default = [ ];
+        description = "Other clusters whose nodes may connect. Nodes of the declaring cluster can always connect.";
+      };
     };
   };
 

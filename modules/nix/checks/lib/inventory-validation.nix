@@ -195,6 +195,30 @@ let
     }
   '';
 
+  serviceFiles =
+    clusters:
+    {
+      "users/inventory-user.nix" = validUser "inventory-user";
+      "deployment-roles/compute-role.nix" = validDeploymentRole "compute-role";
+    }
+    // lib.concatMapAttrs (
+      cid: c:
+      lib.listToAttrs (map (hid: lib.nameValuePair "hosts/lab/${hid}.nix" (validHost hid "")) c.hosts)
+      // {
+        "clusters/${cid}.nix" = ''
+          {
+            id = "${cid}";
+            ownership = {
+              class = "personal";
+              owner = "inventory-user";
+            };
+            members.hosts = [ ${lib.concatMapStringsSep " " (hid: ''"${hid}"'') c.hosts} ];
+            network.services = ${c.services};
+          }
+        '';
+      }
+    ) clusters;
+
   cases = {
     duplicate-id = {
       desc = "two entity files with the same `id` field throw";
@@ -917,6 +941,54 @@ let
             };
           }
         '';
+      };
+    };
+
+    service-accepts-served-role = {
+      desc = "a cluster service served by a role that has a node loads";
+      expectFail = false;
+      files = serviceFiles {
+        "c-svc" = {
+          hosts = [ "h-svc" ];
+          services = ''{ api = { port = 8317; role = "compute"; }; }'';
+        };
+      };
+    };
+
+    service-rejects-role-without-node = {
+      desc = "a cluster service served by a role without nodes is rejected";
+      expectFail = true;
+      files = serviceFiles {
+        "c-svc" = {
+          hosts = [ "h-svc" ];
+          services = ''{ api = { port = 8317; role = "controller"; }; }'';
+        };
+      };
+    };
+
+    service-rejects-unknown-client = {
+      desc = "a cluster service with an unknown client cluster is rejected";
+      expectFail = true;
+      files = serviceFiles {
+        "c-svc" = {
+          hosts = [ "h-svc" ];
+          services = ''{ api = { port = 8317; role = "compute"; clients = [ "c-missing" ]; }; }'';
+        };
+      };
+    };
+
+    service-rejects-duplicate-name = {
+      desc = "two clusters cannot declare the same service name";
+      expectFail = true;
+      files = serviceFiles {
+        "c-a" = {
+          hosts = [ "h-a" ];
+          services = ''{ api = { port = 8317; role = "compute"; }; }'';
+        };
+        "c-b" = {
+          hosts = [ "h-b" ];
+          services = ''{ api = { port = 8318; role = "compute"; }; }'';
+        };
       };
     };
   };
