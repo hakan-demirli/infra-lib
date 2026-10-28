@@ -246,7 +246,7 @@ pkgs.testers.runNixOSTest {
     ntfy = read_events("http-9999.jsonl")[-1]
     ntfy_headers = {key.lower(): value for key, value in ntfy["headers"].items()}
     assert ntfy["path"] == "/alerts", ntfy
-    assert ntfy_headers["x-priority"] == "high", ntfy_headers
+    assert ntfy_headers["x-priority"] == "default", ntfy_headers
     assert "warning" in ntfy_headers["x-tags"], ntfy_headers
     assert ntfy_headers["x-title"] == "Fan-out test", ntfy_headers
     assert ntfy_headers["x-sequence-id"] != "", ntfy_headers
@@ -304,5 +304,19 @@ pkgs.testers.runNixOSTest {
         assert event_count(name) == count, (
             f"severity=none escaped through {name}: before={count}, after={event_count(name)}"
         )
+
+    ntfy_count = event_count("http-9999.jsonl")
+    notifications.succeed(
+        "send-alert CriticalProbe severity=critical instance=test-host "
+        "--annotation=summary='Critical test'"
+    )
+    notifications.wait_until_succeeds(
+        f"test $(wc -l < {capture_dir}/http-9999.jsonl) -gt {ntfy_count}", timeout=60
+    )
+    critical_ntfy = {
+        key.lower(): value for key, value in read_events("http-9999.jsonl")[-1]["headers"].items()
+    }
+    assert critical_ntfy["x-priority"] == "urgent", critical_ntfy
+    assert "rotating_light" in critical_ntfy["x-tags"], critical_ntfy
   '';
 }
