@@ -35,8 +35,9 @@ pkgs.runCommand "ci-workflows"
     with tempfile.TemporaryDirectory() as directory:
         work = pathlib.Path(directory)
         for name, script in {
+            "gh": 'printf "%s" "$PR"',
             "git": "exit 0",
-            "nix": 'test "$EVAL_FAIL" = false || exit 1\ncase "$CI_FLAKE" in *ci-base*) printf "%s" "$PREVIOUS";; *) printf "%s" "$CURRENT";; esac',
+            "nix": 'test "$EVAL_FAIL" = false || exit 1\ncase "$CI_FLAKE" in *ci-base*) printf "%s" "$PREVIOUS";; *ci-merged*) printf "%s" "$MERGED";; *) printf "%s" "$CURRENT";; esac',
         }.items():
             executable = work / name
             executable.write_text("#!${pkgs.runtimeShell}\n" + script + "\n")
@@ -56,19 +57,35 @@ pkgs.runCommand "ci-workflows"
             ([original], [original], [original], "", False),
             ([original], [original], [], "base", True),
         ]
-        for current, previous, expected, base, fail in cases:
+        def discover(current, previous, base, fail=False, merged_sha="", pr="", merged=()):
             output = work / "output"
             output.write_text("")
             result = run(
                 discovery, CURRENT=json.dumps(current), PREVIOUS=json.dumps(previous),
+                MERGED=json.dumps(list(merged)), MERGED_SHA=merged_sha, PR=pr,
+                GITHUB_REPOSITORY="owner/repo",
                 BASE_SHA=base, EVAL_FAIL=str(fail).lower(), RUNNER_TEMP=directory,
                 GITHUB_OUTPUT=str(output), PATH=directory + ":" + os.environ["PATH"],
             )
+            values = dict(line.split("=", 1) for line in output.read_text().splitlines())
+            return result, values
+
+        for current, previous, expected, base, fail in cases:
+            result, values = discover(current, previous, base, fail)
             if fail:
                 assert result.returncode != 0
                 continue
             assert result.returncode == 0, result.stderr
-            values = dict(line.split("=", 1) for line in output.read_text().splitlines())
+            assert json.loads(values["value"])["include"] == expected
+            assert values["changed"] == str(bool(expected)).lower()
+
+        for current, merged, pr, expected in [
+            ([changed], [changed], "7", []),
+            ([changed], [changed], "", [changed]),
+            ([changed, added], [changed], "7", [added]),
+        ]:
+            result, values = discover(current, [original], "base", merged_sha="merge", pr=pr, merged=merged)
+            assert result.returncode == 0, result.stderr
             assert json.loads(values["value"])["include"] == expected
             assert values["changed"] == str(bool(expected)).lower()
 
