@@ -14,6 +14,9 @@ let
   ownerId = host.ownership.owner or null;
   ownerAccount = if ownerId == null then null else cluster.users.${ownerId}.system_account;
   ownerManagerMonitored = ownerAccount != null && config.users.users ? ${ownerAccount.username};
+  ownerActiveHome = "${
+    config.users.users.${ownerAccount.username}.home
+  }/.local/state/home-manager/gcroots/current-home";
   userUnitCollector = pkgs.writeShellApplication {
     name = "collect-fleet-user-units";
     runtimeInputs = [
@@ -60,6 +63,14 @@ let
       output="$(mktemp ${metricsDirectory}/fleet-revisions.prom.XXXXXX)"
       trap 'rm -f "$output"' EXIT
 
+      revisionKind() {
+        case "$1" in
+          sha256-* | *-dirty) echo local ;;
+          unknown) echo unknown ;;
+          *) echo git ;;
+        esac
+      }
+
       currentSystem="$(readlink -f /run/current-system)"
       systemClosure="''${currentSystem##*/}"
       systemProfile="$(readlink /nix/var/nix/profiles/system 2>/dev/null || true)"
@@ -70,11 +81,7 @@ let
       fi
       systemRevision="$(/run/current-system/sw/bin/nixos-version --configuration-revision 2>/dev/null || true)"
       systemRevision="''${systemRevision:-unknown}"
-      case "$systemRevision" in
-        sha256-* | *-dirty) systemRevisionKind="local" ;;
-        unknown) systemRevisionKind="unknown" ;;
-        *) systemRevisionKind="git" ;;
-      esac
+      systemRevisionKind="$(revisionKind "$systemRevision")"
       systemVersion="$(/run/current-system/sw/bin/nixos-version --short)"
       systemActivatedAt="$(stat -c %Y /run/current-system)"
 
@@ -108,26 +115,27 @@ let
           printf 'fleet_nixos_reboot_required{host="%s",component="%s"} %s\n' \
             ${lib.escapeShellArg host.id} "$component" "$required"
         done
-        printf '%s\n' '# HELP fleet_home_manager_generation_info Active standalone Home Manager generation.'
+        printf '%s\n' '# HELP fleet_home_manager_generation_info Active Home Manager generation of the host owner and its source revision.'
         printf '%s\n' '# TYPE fleet_home_manager_generation_info gauge'
-
-        for home in /home/*; do
-          [[ -d "$home" ]] || continue
-          profile="$home/.local/state/nix/profiles/home-manager"
-          [[ -e "$profile" ]] || continue
-
-          homeProfile="$(readlink "$profile" 2>/dev/null || true)"
-          homeGeneration="unknown"
-          if [[ "$homeProfile" == home-manager-*-link ]]; then
-            homeGeneration="''${homeProfile#home-manager-}"
-            homeGeneration="''${homeGeneration%-link}"
+        ${lib.optionalString ownerManagerMonitored ''
+          activeHome=${lib.escapeShellArg ownerActiveHome}
+          if [[ -L "$activeHome" ]]; then
+            homeGeneration="$(readlink -e "$activeHome" || true)"
+            homeClosure=unknown
+            homeRevision=unknown
+            if [[ "$homeGeneration" =~ ^/nix/store/[0-9a-z]{32}-home-manager-generation$ ]]; then
+              homeClosure="''${homeGeneration##*/}"
+              revisionFile="$homeGeneration/fleet-revision"
+              if [[ -f "$revisionFile" && ! -L "$revisionFile" ]]; then
+                homeRevision="$(<"$revisionFile")"
+              fi
+            fi
+            [[ "$homeRevision" =~ ^[0-9a-f]{40}(-dirty)?$ ]] || homeRevision=unknown
+            printf 'fleet_home_manager_generation_info{host="%s",user="%s",revision="%s",revision_kind="%s",closure="%s"} 1\n' \
+              ${lib.escapeShellArg host.id} ${lib.escapeShellArg ownerAccount.username} \
+              "$homeRevision" "$(revisionKind "$homeRevision")" "$homeClosure"
           fi
-          homeClosure="$(readlink -f "$profile")"
-          homeClosure="''${homeClosure##*/}"
-          user="''${home##*/}"
-          printf 'fleet_home_manager_generation_info{host="%s",user="%s",generation="%s",closure="%s"} 1\n' \
-            ${lib.escapeShellArg host.id} "$user" "$homeGeneration" "$homeClosure"
-        done
+        ''}
       } > "$output"
 
       chmod 0644 "$output"

@@ -90,6 +90,7 @@
   };
   hardware-health = import ./hardware-health.nix { inherit pkgs self inputs; };
   user-unit-metrics = import ./user-unit-metrics.nix { inherit pkgs; };
+  home-revision-metrics = import ./home-revision-metrics.nix { inherit pkgs; };
   slurm-metrics = import ./slurm-metrics.nix { inherit pkgs self inputs; };
   cephfs-replicated-read-cross-client = import ./cephfs-replicated-read-cross-client.nix {
     pkgs = cephPkgs;
