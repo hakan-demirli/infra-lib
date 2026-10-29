@@ -89,6 +89,17 @@ pkgs.runCommand "ci-workflows"
             assert json.loads(values["value"])["include"] == expected
             assert values["changed"] == str(bool(expected)).lower()
 
+        modes = [original | {"mode": "build"}, added | {"mode": "run"}]
+        result, values = discover(modes, [], "base")
+        assert result.returncode == 0, result.stderr
+        assert json.loads(values["value"])["include"] == modes
+        result, _ = discover([original | {"mode": "deploy"}], [], "base")
+        assert result.returncode != 0
+
+    for step in external["jobs"]["build"]["steps"]:
+        if "nix run" in step.get("run", "") or step.get("uses", "").startswith("actions/upload-artifact@"):
+            assert step.get("if") == "matrix.mode != 'build'", step
+
     for state in ["success", "failure", "cancelled", "skipped"]:
         result = run(checks_gate, RESULTS=json.dumps({
             "discover": {"result": "success"}, "build": {"result": state},
