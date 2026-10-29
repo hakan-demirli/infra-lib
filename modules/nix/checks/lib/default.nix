@@ -17,6 +17,7 @@
   boot-assessment = import ./boot-assessment.nix { inherit pkgs self; };
   fleet-upgrade = import ./fleet-upgrade.nix { inherit pkgs self; };
   slurm-switch-keeps-jobs = import ./slurm-switch-keeps-jobs.nix { inherit pkgs; };
+  slurm-rebooted-node-returns = import ./slurm-rebooted-node-returns.nix { inherit pkgs; };
   fleet-deploy-controller = import ./fleet-deploy-controller.nix { inherit pkgs self inputs; };
   ci-workflows = import ./ci-workflows.nix { inherit pkgs; };
   impermanence-contract = import ./impermanence-contract.nix {
@@ -90,6 +91,7 @@
   };
   hardware-health = import ./hardware-health.nix { inherit pkgs self inputs; };
   user-unit-metrics = import ./user-unit-metrics.nix { inherit pkgs; };
+  home-revision-metrics = import ./home-revision-metrics.nix { inherit pkgs; };
   slurm-metrics = import ./slurm-metrics.nix { inherit pkgs self inputs; };
   cephfs-replicated-read-cross-client = import ./cephfs-replicated-read-cross-client.nix {
     pkgs = cephPkgs;

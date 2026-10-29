@@ -515,9 +515,14 @@ let
 
   hostMonitoringContract =
     h:
-    optional (
-      !h.monitoring.enabled && h.monitoring.always_on
-    ) "host '${h.id}' sets monitoring.always_on=true while monitoring.enabled=false";
+    concatLists [
+      (optional (
+        !h.monitoring.enabled && h.monitoring.always_on
+      ) "host '${h.id}' sets monitoring.always_on=true while monitoring.enabled=false")
+      (optional (
+        (h.labels.hibernation or null) == "true" && h.monitoring.always_on
+      ) "host '${h.id}' hibernates but sets monitoring.always_on=true")
+    ];
 
   slurmPartitionHosts = unique (
     concatLists (

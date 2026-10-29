@@ -14,6 +14,9 @@ jobs:
   discover:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       matrix: ${{ steps.matrix.outputs.value }}
       changed: ${{ steps.matrix.outputs.changed }}
@@ -26,6 +29,8 @@ jobs:
       - id: matrix
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          MERGED_SHA: ${{ github.event_name == 'push' && github.sha || '' }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           expression='let
@@ -39,6 +44,17 @@ jobs:
           if [[ -n "$BASE_SHA" && ! "$BASE_SHA" =~ ^0+$ ]]; then
             git worktree add --detach "$RUNNER_TEMP/ci-base" "$BASE_SHA"
             previous=$(CI_FLAKE="$RUNNER_TEMP/ci-base" nix eval --impure --json --no-update-lock-file --expr "$expression")
+          fi
+          if [[ -n "$MERGED_SHA" ]]; then
+            pr=$(gh api "repos/$GITHUB_REPOSITORY/commits/$MERGED_SHA/pulls" --jq '
+              map(select(.merge_commit_sha == env.MERGED_SHA and .head.repo.full_name == env.GITHUB_REPOSITORY))
+              | first | .number // empty')
+            if [[ -n "$pr" ]]; then
+              git fetch --no-tags origin "refs/pull/$pr/head"
+              git worktree add --detach "$RUNNER_TEMP/ci-merged" FETCH_HEAD
+              merged=$(CI_FLAKE="$RUNNER_TEMP/ci-merged" nix eval --impure --json --no-update-lock-file --expr "$expression")
+              previous=$(jq -cn --argjson previous "$previous" --argjson merged "$merged" '$previous + $merged')
+            fi
           fi
           matrix=$(jq -cn --argjson current "$current" --argjson previous "$previous" '
             {include: [$current[] | . as $entry | select(any($previous[];

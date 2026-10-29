@@ -188,6 +188,7 @@ in
             AuthType=auth/munge
             CryptoType=crypto/munge
             SlurmdParameters=config_overrides
+            ReturnToService=2
             SlurmctldPort=${toString ports.controller}
             SlurmdPort=${toString ports.node}
             SrunPortRange=${ports.srun}

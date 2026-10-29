@@ -46,6 +46,13 @@ let
       ++ lib.optional (loader == "grub") (self + "/modules/system/boot/grub.nix");
     };
   normal = evaluate { };
+  remote = evaluate {
+    extraModule.services = {
+      openssh.enable = true;
+      tailscale.enable = true;
+    };
+  };
+  healthCheck = remote.config.systemd.services.boot-health-check;
   arm = evaluate { system = "aarch64-linux"; };
   fallback = evaluate { boot.efi_registration = "fallback"; };
   grub = evaluate { loader = "grub"; };
@@ -83,11 +90,28 @@ let
     grub-fallback-is-removable =
       !grubFallback.config.boot.loader.efi.canTouchEfiVariables
       && grubFallback.config.boot.loader.grub.efiInstallAsRemovable;
-    normal-pc-counts-boots =
-      normal.config.boot.loader.systemd-boot.bootCounting.enable
+    normal-pc-counts-boots = normal.config.boot.loader.systemd-boot.bootCounting.enable;
+    local-only-pc-has-no-health-check = !(normal.config.systemd.services ? boot-health-check);
+    remote-access-gates-boot-complete =
+      lib.elem "boot-complete.target" healthCheck.requiredBy
+      && lib.all (unit: lib.elem unit healthCheck.after) [
+        "sshd.service"
+        "tailscaled.service"
+      ]
+      && lib.length healthCheck.serviceConfig.ExecStart == 2;
+    remote-access-restarts-keep-boot-assessment =
+      !healthCheck.restartIfChanged
       &&
-        lib.elem "sshd.service" normal.config.systemd.targets.boot-complete.requires
-        == normal.config.services.openssh.enable;
+        lib.all
+          (
+            unit:
+            !(lib.elem unit healthCheck.requires)
+            && !(lib.elem unit (remote.config.systemd.targets.boot-complete.requires or [ ]))
+          )
+          [
+            "sshd.service"
+            "tailscaled.service"
+          ];
     hibernating-pc-does-not-count-boots =
       !hibernating.config.boot.loader.systemd-boot.bootCounting.enable;
     hibernating-pc-rejects-boot-counting = lib.any (
@@ -95,6 +119,7 @@ let
     ) (failures hibernatingWithCounting);
     valid-policies-pass-assertions = lib.all (system: failures system == [ ]) [
       normal
+      remote
       arm
       fallback
       grub

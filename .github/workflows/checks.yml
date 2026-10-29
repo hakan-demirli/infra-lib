@@ -23,9 +23,10 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25
       - uses: nix-community/cache-nix-action@b05e2d861a8d616a0cd4c91de03de22dfe447f57
         with:
-          primary-key: eval-v3-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
-          restore-prefixes-first-match: eval-v3-${{ runner.os }}-${{ runner.arch }}-
+          primary-key: eval-v4-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}
+          restore-prefixes-first-match: eval-v4-${{ runner.os }}-${{ runner.arch }}-
           gc-max-store-size: 1G
+          save: ${{ github.event_name == 'push' }}
       - id: matrix
         run: |
           set -euo pipefail
@@ -46,14 +47,89 @@ jobs:
         with:
           persist-credentials: false
       - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25
-      - uses: nix-community/cache-nix-action@b05e2d861a8d616a0cd4c91de03de22dfe447f57
+      - uses: nix-community/cache-nix-action/restore@b05e2d861a8d616a0cd4c91de03de22dfe447f57
         with:
-          primary-key: build-v3-${{ matrix.system }}-${{ matrix.name }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
-          restore-prefixes-first-match: build-v3-${{ matrix.system }}-${{ matrix.name }}-
-          gc-max-store-size: 0
+          primary-key: build-v4-${{ matrix.system }}-${{ matrix.name }}-${{ github.sha }}
+          restore-prefixes-first-match: build-v4-${{ matrix.system }}-${{ matrix.name }}-
       - env:
           ATTRIBUTE: ${{ matrix.attr }}
         run: nix build --no-update-lock-file --print-build-logs --out-link result-ci ".#$ATTRIBUTE"
+      - id: retain
+        if: github.event_name == 'push'
+        env:
+          ATTRIBUTE: ${{ matrix.attr }}
+          ROOTS: ${{ runner.temp }}/retain
+          BUDGET: '1073741824'
+        run: |
+          set -euo pipefail
+          filters='def store_path: if startswith("/") then . else "/nix/store/" + . end;'
+          drv=$(nix path-info --derivation --no-update-lock-file ".#$ATTRIBUTE")
+          rm result-ci
+          mapfile -t built < <(
+            nix derivation show "$drv" \
+              | jq -r "$filters"'
+                  .derivations[].inputs.drvs | to_entries[]
+                  | "\(.key | store_path)^\(.value.outputs | join(","))"' \
+              | xargs -r nix path-info --recursive \
+              | sort -u \
+              | xargs -r nix path-info --json --json-format 2 \
+              | jq -r "$filters"'
+                  .info | to_entries[]
+                  | select(.value.ultimate and .value.deriver != null)
+                  | "\(.key | store_path)\t\(.value.deriver | store_path)"'
+          )
+          mapfile -t costly < <(
+            printf '%s\n' "${built[@]}" | cut -f2 | sort -u \
+              | while IFS= read -r deriver; do [[ -e $deriver ]] && printf '%s\n' "$deriver"; done \
+              | xargs -r nix derivation show \
+              | jq -r "$filters"'
+                  def on: . == true or . == "1";
+                  def off: . == false or . == "";
+                  .derivations | to_entries[] | .value as $d | ($d.structuredAttrs // $d.env) as $a
+                  | select([$d.outputs[] | has("hash")] | any | not)
+                  | select($a.preferLocalBuild | on | not)
+                  | select(($a | has("allowSubstitutes")) and ($a.allowSubstitutes | off) | not)
+                  | .key | store_path'
+          )
+          mkdir -p "$ROOTS"
+          declare -A counted=()
+          used=0
+          kept=()
+          while IFS=$'\t' read -r _ path; do
+            mapfile -t closure < <(
+              nix path-info --json --json-format 2 --recursive "$path" \
+                | jq -r "$filters"'.info | to_entries[] | "\(.value.narSize)\t\(.key | store_path)"'
+            )
+            extra=0
+            for entry in "${closure[@]}"; do
+              [[ -v counted[${entry#*$'\t'}] ]] || extra=$((extra + ${entry%%$'\t'*}))
+            done
+            if (( used + extra > BUDGET )); then
+              echo "Skipping CI cache retention for ${path##*/}: $extra bytes exceed remaining budget $((BUDGET - used))"
+              continue
+            fi
+            for entry in "${closure[@]}"; do
+              counted[${entry#*$'\t'}]=1
+            done
+            used=$((used + extra))
+            kept+=("$path")
+            nix-store --add-root "$ROOTS/${path##*/}" --realise "$path" > /dev/null
+            echo "Retaining ${path##*/} (+$extra bytes)"
+          done < <(
+            printf '%s\n' "${built[@]}" \
+              | awk -F'\t' 'NR == FNR { costly[$1]; next } $2 in costly { print $1 }' \
+                  <(printf '%s\n' "${costly[@]}") - \
+              | xargs -r nix path-info --json --json-format 2 --closure-size \
+              | jq -r "$filters"'.info | to_entries[] | "\(.value.closureSize)\t\(.key | store_path)"' \
+              | sort -n
+          )
+          echo "count=${#kept[@]}" >> "$GITHUB_OUTPUT"
+          echo "key=$(printf '%s\n' "${kept[@]}" | sort | sha256sum | cut -c1-32)" >> "$GITHUB_OUTPUT"
+      - if: github.event_name == 'push' && steps.retain.outputs.count != '0'
+        uses: nix-community/cache-nix-action/save@b05e2d861a8d616a0cd4c91de03de22dfe447f57
+        with:
+          primary-key: build-v4-${{ matrix.system }}-${{ matrix.name }}-${{ steps.retain.outputs.key }}
+          gc-max-store-size: 0
 
   required-result:
     needs: [discover, build]

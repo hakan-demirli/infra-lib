@@ -81,9 +81,9 @@ let
 
       reachable() {
         ${
-          lib.optionalString (healthUnits != [ ]) ''
-            systemctl is-active --quiet ${lib.escapeShellArgs healthUnits} || return 1
-          ''
+          lib.concatMapStrings (unit: ''
+            systemctl is-active --quiet ${lib.escapeShellArg unit} || return 1
+          '') healthUnits
         }curl -fsS --connect-timeout 5 --max-time 15 -o /dev/null "$plan_url"
       }
 

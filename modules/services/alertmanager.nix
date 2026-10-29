@@ -426,7 +426,7 @@ in
             notification = {
               topic = channels.ntfy.topic;
               priority = ''
-                status == "resolved" ? "low" : labels["severity"] == "critical" ? "urgent" : "high"
+                status == "resolved" ? "low" : labels["severity"] == "critical" ? "urgent" : "default"
               '';
               tags = [
                 {

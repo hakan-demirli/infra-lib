@@ -41,6 +41,11 @@ pkgs.testers.runNixOSTest {
       };
       system.configurationRevision = baseRevision;
 
+      services = {
+        openssh.enable = true;
+        tailscale.enable = true;
+      };
+
       nix.settings = {
         experimental-features = [
           "nix-command"
@@ -66,6 +71,10 @@ pkgs.testers.runNixOSTest {
         unreachable.configuration = {
           system.configurationRevision = lib.mkForce nextRevision;
           systemd.services.plan-server.enable = lib.mkForce false;
+        };
+        tailnetless.configuration = {
+          system.configurationRevision = lib.mkForce nextRevision;
+          services.tailscale.enable = lib.mkForce false;
         };
       };
 
@@ -190,6 +199,15 @@ pkgs.testers.runNixOSTest {
           machine.wait_for_open_port(8000)
           upgrade("failed", "rollback", succeeds=False)
           running(f"{base}/specialisation/next")
+
+      tailnetless, tailnetless_toplevel = commit(f"{coreutils}/ln -s {base}/specialisation/tailnetless $out")
+      history.insert(0, tailnetless)
+
+      with subtest("a generation that stops one health unit is switched back"):
+          publish(history, revision=tailnetless, toplevel=tailnetless_toplevel)
+          upgrade("failed", "rollback", succeeds=False)
+          running(f"{base}/specialisation/next")
+          machine.wait_for_unit("tailscaled.service")
 
       with subtest("a dirty generation is never replaced"):
           machine.succeed(f"{base}/specialisation/local/bin/switch-to-configuration test")
