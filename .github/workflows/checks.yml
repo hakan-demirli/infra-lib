@@ -56,6 +56,7 @@ jobs:
         run: nix build --no-update-lock-file --print-build-logs --out-link result-ci ".#$ATTRIBUTE"
       - id: retain
         if: github.event_name == 'push'
+        shell: nix shell --inputs-from . nixpkgs#bash nixpkgs#coreutils nixpkgs#findutils nixpkgs#gawk nixpkgs#jq --command bash --noprofile --norc -eo pipefail {0}
         env:
           ATTRIBUTE: ${{ matrix.attr }}
           ROOTS: ${{ runner.temp }}/retain
