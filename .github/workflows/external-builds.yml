@@ -40,6 +40,7 @@ jobs:
             drvPath = (builtins.getAttr entry.name (builtins.getAttr entry.system jobs.checks)).drvPath;
           }) jobs.matrix.include'
           current=$(CI_FLAKE="$PWD" nix eval --impure --json --no-update-lock-file --expr "$expression")
+          jq -e 'all(.[]; (.mode // "run") as $mode | $mode == "run" or $mode == "build")' <<< "$current" > /dev/null
           previous='[]'
           if [[ -n "$BASE_SHA" && ! "$BASE_SHA" =~ ^0+$ ]]; then
             git worktree add --detach "$RUNNER_TEMP/ci-base" "$BASE_SHA"
@@ -95,13 +96,17 @@ jobs:
           gc-max-store-size: 0
       - env:
           ATTRIBUTE: ${{ matrix.attr }}
+        run: nix build --no-update-lock-file --out-link result-ci ".#$ATTRIBUTE"
+      - if: matrix.mode != 'build'
+        env:
+          ATTRIBUTE: ${{ matrix.attr }}
           CI_OUTPUT_DIR: ${{ runner.temp }}/product
         run: |
           set -euo pipefail
-          nix build --no-update-lock-file --out-link result-ci ".#$ATTRIBUTE"
           mkdir -p "$CI_OUTPUT_DIR"
           nix run --no-update-lock-file ".#$ATTRIBUTE"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - if: matrix.mode != 'build'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ${{ matrix.name }}-${{ matrix.system }}
           path: ${{ runner.temp }}/product
