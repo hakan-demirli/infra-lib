@@ -4,6 +4,11 @@ with types;
 let
   mac = strMatching "^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$";
   ip4 = strMatching "^([0-9]{1,3}\\.){3}[0-9]{1,3}(/[0-9]{1,2})?$";
+  ip4Address =
+    let
+      octet = "(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])";
+    in
+    strMatching "^(${octet}\\.){3}${octet}$";
   ip6 = strMatching "^[0-9a-fA-F:]+(/[0-9]{1,3})?$";
   slug = strMatching "^[a-z0-9][a-z0-9_-]*$";
   hostId = strMatching "^[a-z][a-z0-9-]*[a-z0-9]$";
@@ -214,6 +219,11 @@ let
       egress = mkOption {
         type = networkEgress;
         default = { };
+      };
+      tailnet_router = mkOption {
+        type = nullOr hostId;
+        default = null;
+        description = "Tailnet host that routes the routed hosts of this network into the tailnet.";
       };
     };
   };
@@ -1813,6 +1823,59 @@ let
     };
   };
 
+  routedHostTeamGrant = submodule {
+    options = {
+      team = mkOption { type = slug; };
+      ports = mkOption {
+        type = listOf port;
+        description = "TCP ports that the team members may reach.";
+      };
+    };
+  };
+
+  routedHostUserGrant = submodule {
+    options = {
+      user = mkOption { type = slug; };
+      ports = mkOption {
+        type = listOf port;
+        description = "TCP ports that the user may reach.";
+      };
+    };
+  };
+
+  routedHostAccess = submodule {
+    options = {
+      teams = mkOption {
+        type = listOf routedHostTeamGrant;
+        default = [ ];
+      };
+      users = mkOption {
+        type = listOf routedHostUserGrant;
+        default = [ ];
+      };
+    };
+  };
+
+  routedHost = _: {
+    options = {
+      id = mkOption { type = hostId; };
+      description = mkOption {
+        type = str;
+        default = "";
+      };
+      network = mkOption {
+        type = slug;
+        description = "Network whose tailnet router routes the address into the tailnet.";
+      };
+      ipv4 = mkOption { type = ip4Address; };
+      access = mkOption {
+        type = routedHostAccess;
+        default = { };
+        description = "Personal tailnet devices of the granted users and team members may reach the granted TCP ports.";
+      };
+    };
+  };
+
 in
 {
   siteModule = site;
@@ -1828,6 +1891,7 @@ in
   topologyModule = topology;
   linkModule = link;
   projectModule = project;
+  routedHostModule = routedHost;
 
   siteType = submodule site;
   rackType = submodule rack;
@@ -1842,6 +1906,7 @@ in
   topologyType = submodule topology;
   linkType = submodule link;
   projectType = submodule project;
+  routedHostType = submodule routedHost;
 
   macType = mac;
   ipv4Type = ip4;
