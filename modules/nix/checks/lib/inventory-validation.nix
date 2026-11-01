@@ -219,6 +219,60 @@ let
       }
     ) clusters;
 
+  validNetwork =
+    {
+      prefix ? "192.168.69.0/24",
+      tailnetRouter ? ''"h-router"'',
+    }:
+    ''
+      {
+        id = "lan";
+        prefix_v4 = "${prefix}";
+        gateway_v4 = "192.168.69.1";
+        tailnet_router = ${tailnetRouter};
+      }
+    '';
+
+  validRoutedHost =
+    {
+      id ? "desk",
+      network ? "lan",
+      ipv4 ? "192.168.69.231",
+      access ? ''{ users = [ { user = "guest"; ports = [ 22 ]; } ]; }'',
+    }:
+    ''
+      { lib, ... }:
+      {
+        id = "${id}";
+        network = "${network}";
+        ipv4 = "${ipv4}";
+        access = ${access};
+      }
+    '';
+
+  routedHostFiles =
+    {
+      router ? validHost "h-router" "",
+      network ? validNetwork { },
+      routedHosts ? {
+        desk = validRoutedHost { };
+      },
+    }:
+    {
+      "users/inventory-user.nix" = validUser "inventory-user";
+      "users/guest.nix" = validUser "guest";
+      "deployment-roles/compute-role.nix" = validDeploymentRole "compute-role";
+      "hosts/lab/h-router.nix" = router;
+      "networks/lan.nix" = network;
+      "teams/guests.nix" = ''
+        {
+          id = "guests";
+          members = [ { user = "guest"; } ];
+        }
+      '';
+    }
+    // lib.mapAttrs' (id: text: lib.nameValuePair "routed-hosts/${id}.nix" text) routedHosts;
+
   cases = {
     duplicate-id = {
       desc = "two entity files with the same `id` field throw";
@@ -1014,6 +1068,186 @@ let
           hosts = [ "h-b" ];
           services = ''{ api = { port = 8318; role = "compute"; }; }'';
         };
+      };
+    };
+
+    routed-host-accepts-valid = {
+      desc = "a routed host on a network with a tailnet router loads";
+      expectFail = false;
+      files = routedHostFiles { };
+    };
+
+    routed-host-accepts-team-grant = {
+      desc = "a routed host can grant a team";
+      expectFail = false;
+      files = routedHostFiles {
+        routedHosts.desk = validRoutedHost {
+          access = ''{ teams = [ { team = "guests"; ports = [ 22 ]; } ]; }'';
+        };
+      };
+    };
+
+    routed-host-accepts-user-range = {
+      desc = "routed host user grants can be built from a range";
+      expectFail = false;
+      files =
+        routedHostFiles {
+          routedHosts.desk = validRoutedHost {
+            access = ''{ users = map (i: { user = "guest-''${toString i}"; ports = [ 22 ]; }) (lib.range 0 1); }'';
+          };
+        }
+        // {
+          "users/guest-0.nix" = validUser "guest-0";
+          "users/guest-1.nix" = validUser "guest-1";
+        };
+    };
+
+    routed-host-rejects-unknown-network = {
+      desc = "a routed host on an unknown network is rejected";
+      expectFail = true;
+      files = routedHostFiles {
+        routedHosts.desk = validRoutedHost { network = "missing"; };
+      };
+    };
+
+    routed-host-rejects-network-without-router = {
+      desc = "a routed host on a network without a tailnet router is rejected";
+      expectFail = true;
+      files = routedHostFiles {
+        network = validNetwork { tailnetRouter = "null"; };
+      };
+    };
+
+    routed-host-rejects-address-outside-network = {
+      desc = "a routed host address must be inside its network";
+      expectFail = true;
+      files = routedHostFiles {
+        routedHosts.desk = validRoutedHost { ipv4 = "192.168.70.231"; };
+      };
+    };
+
+    routed-host-rejects-gateway-address = {
+      desc = "a routed host cannot take the gateway address of its network";
+      expectFail = true;
+      files = routedHostFiles {
+        routedHosts.desk = validRoutedHost { ipv4 = "192.168.69.1"; };
+      };
+    };
+
+    routed-host-rejects-prefix-address = {
+      desc = "a routed host address must be a single IPv4 address";
+      expectFail = true;
+      files = routedHostFiles {
+        routedHosts.desk = validRoutedHost { ipv4 = "192.168.69.0/24"; };
+      };
+    };
+
+    routed-host-rejects-unknown-user = {
+      desc = "a routed host grant for an unknown user is rejected";
+      expectFail = true;
+      files = routedHostFiles {
+        routedHosts.desk = validRoutedHost {
+          access = ''{ users = [ { user = "nobody"; ports = [ 22 ]; } ]; }'';
+        };
+      };
+    };
+
+    routed-host-rejects-unknown-team = {
+      desc = "a routed host grant for an unknown team is rejected";
+      expectFail = true;
+      files = routedHostFiles {
+        routedHosts.desk = validRoutedHost {
+          access = ''{ teams = [ { team = "nobody"; ports = [ 22 ]; } ]; }'';
+        };
+      };
+    };
+
+    routed-host-rejects-duplicate-user-grant = {
+      desc = "a routed host cannot grant the same user twice";
+      expectFail = true;
+      files = routedHostFiles {
+        routedHosts.desk = validRoutedHost {
+          access = ''{ users = [ { user = "guest"; ports = [ 22 ]; } { user = "guest"; ports = [ 80 ]; } ]; }'';
+        };
+      };
+    };
+
+    routed-host-rejects-grant-without-ports = {
+      desc = "a routed host grant without ports is rejected";
+      expectFail = true;
+      files = routedHostFiles {
+        routedHosts.desk = validRoutedHost {
+          access = ''{ users = [ { user = "guest"; ports = [ ]; } ]; }'';
+        };
+      };
+    };
+
+    routed-host-rejects-host-id = {
+      desc = "a routed host cannot reuse the id of a host";
+      expectFail = true;
+      files = routedHostFiles {
+        routedHosts.h-router = validRoutedHost { id = "h-router"; };
+      };
+    };
+
+    routed-host-rejects-duplicate-address = {
+      desc = "two routed hosts cannot share an IPv4 address";
+      expectFail = true;
+      files = routedHostFiles {
+        routedHosts = {
+          desk = validRoutedHost { };
+          lab = validRoutedHost { id = "lab"; };
+        };
+      };
+    };
+
+    network-rejects-unknown-tailnet-router = {
+      desc = "a network with an unknown tailnet router is rejected";
+      expectFail = true;
+      files = routedHostFiles {
+        network = validNetwork { tailnetRouter = ''"h-missing"''; };
+      };
+    };
+
+    network-rejects-tailnet-router-off-tailnet = {
+      desc = "a network tailnet router must be a tailnet member";
+      expectFail = true;
+      files = routedHostFiles { router = validHost "h-router" "tailnet_member = false;"; };
+    };
+
+    network-rejects-retired-tailnet-router = {
+      desc = "a network tailnet router cannot be retired";
+      expectFail = true;
+      files = routedHostFiles {
+        router = lib.replaceStrings [ ''state = "provisioned";'' ] [ ''state = "retired";'' ] (
+          validHost "h-router" ""
+        );
+      };
+    };
+
+    network-rejects-shared-cluster-tailnet-router = {
+      desc = "a network tailnet router cannot share its cluster tag with other hosts";
+      expectFail = true;
+      files = routedHostFiles { } // {
+        "hosts/lab/h-other.nix" = validHost "h-other" "";
+        "clusters/c-shared.nix" = ''
+          {
+            id = "c-shared";
+            ownership = {
+              class = "personal";
+              owner = "inventory-user";
+            };
+            members.hosts = [ "h-router" "h-other" ];
+          }
+        '';
+      };
+    };
+
+    network-rejects-tailnet-router-without-prefix-length = {
+      desc = "a network with a tailnet router needs a prefix length";
+      expectFail = true;
+      files = routedHostFiles {
+        network = validNetwork { prefix = "192.168.69.0"; };
       };
     };
   };

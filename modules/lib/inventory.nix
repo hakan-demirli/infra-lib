@@ -126,6 +126,7 @@ let
   projects = loadEntities "projects" types.projectModule;
   users = loadEntities "users" types.userModule;
   hosts = loadEntities "hosts" types.hostModule;
+  routedHosts = loadEntities "routed-hosts" types.routedHostModule;
 
   explicitTeams = loadEntities "teams" types.teamModule;
   unixAccessTiers = loadEntities "unix-access-tiers" types.unixAccessTierModule;
@@ -987,6 +988,103 @@ let
       n.egress.via != null && !hosts ? ${n.egress.via}
     ) "network '${n.id}' egress.via references unknown host '${n.egress.via}'";
 
+  ipv4ToInt = address: foldl' (acc: octet: acc * 256 + toIntBase10 octet) 0 (splitString "." address);
+
+  ipv4InPrefix =
+    address: prefix:
+    let
+      parts = splitString "/" prefix;
+      blockSize = foldl' (acc: _: acc * 2) 1 (range 1 (32 - toIntBase10 (elemAt parts 1)));
+    in
+    ipv4ToInt address / blockSize == ipv4ToInt (head parts) / blockSize;
+
+  hasPrefixLength = prefix: prefix != null && length (splitString "/" prefix) == 2;
+
+  networkTailnetRouterContract =
+    n:
+    let
+      router = n.tailnet_router;
+      routerCluster = hostToCluster.${router} or null;
+    in
+    optionals (router != null) (concatLists [
+      (optional (
+        !hosts ? ${router}
+      ) "network '${n.id}' tailnet_router references unknown host '${router}'")
+      (optional (
+        hosts ? ${router} && (!hosts.${router}.tailnet_member || routerCluster == null)
+      ) "network '${n.id}' tailnet_router '${router}' is not a tailnet member")
+      (optional (
+        routerCluster != null && clusters.${routerCluster}.state == "retired"
+      ) "network '${n.id}' tailnet_router '${router}' belongs to retired cluster '${routerCluster}'")
+      (optional (routerCluster != null && effectiveAllClusterHosts.${routerCluster} != [ router ])
+        "network '${n.id}' tailnet_router '${router}' shares cluster '${routerCluster}' with other hosts; every node with the cluster tag could serve its routes"
+      )
+      (optional (
+        !hasPrefixLength n.prefix_v4
+      ) "network '${n.id}' sets tailnet_router but prefix_v4 has no prefix length")
+    ]);
+
+  routedHostContract =
+    rh:
+    let
+      network = networks.${rh.network} or null;
+      userIds = map (g: g.user) rh.access.users;
+      teamIds = map (g: g.team) rh.access.teams;
+    in
+    concatLists [
+      (optional (
+        network == null
+      ) "routed host '${rh.id}' network references unknown network '${rh.network}'")
+      (optional (
+        network != null && network.tailnet_router == null
+      ) "routed host '${rh.id}' network '${rh.network}' has no tailnet_router")
+      (optional (
+        network != null && hasPrefixLength network.prefix_v4 && !ipv4InPrefix rh.ipv4 network.prefix_v4
+      ) "routed host '${rh.id}' ipv4 '${rh.ipv4}' is outside network '${rh.network}'")
+      (optional (
+        network != null && rh.ipv4 == network.gateway_v4
+      ) "routed host '${rh.id}' ipv4 '${rh.ipv4}' is the gateway of network '${rh.network}'")
+      (optional (hosts ? ${rh.id}) "routed host '${rh.id}' has the id of a host")
+      (concatMap (
+        uid:
+        optional (!users ? ${uid}) "routed host '${rh.id}' access.users references unknown user '${uid}'"
+      ) userIds)
+      (concatMap (
+        tid:
+        optional (!teams ? ${tid}) "routed host '${rh.id}' access.teams references unknown team '${tid}'"
+      ) teamIds)
+      (optional (
+        length userIds != length (unique userIds)
+      ) "routed host '${rh.id}' grants a user more than once")
+      (optional (
+        length teamIds != length (unique teamIds)
+      ) "routed host '${rh.id}' grants a team more than once")
+      (optional (any (g: g.ports == [ ]) (
+        rh.access.users ++ rh.access.teams
+      )) "routed host '${rh.id}' has an access grant without ports")
+    ];
+
+  routedHostCollisions = mapAttrsToList (
+    ipv4: rhs: "routed hosts ${concatMapStringsSep ", " (rh: "'${rh.id}'") rhs} share ipv4 '${ipv4}'"
+  ) (filterAttrs (_: rhs: length rhs > 1) (groupBy (rh: rh.ipv4) (attrValues routedHosts)));
+
+  isActiveUserId = uid: users ? ${uid} && !users.${uid}.archived;
+
+  subnetRouteOf =
+    rh:
+    let
+      userGrants = filter (g: isActiveUserId g.user) rh.access.users;
+      teamGrants = filter (g: any (m: isActiveUserId m.user) teams.${g.team}.members) rh.access.teams;
+    in
+    {
+      inherit (rh) id ipv4 network;
+      prefix = "${rh.ipv4}/32";
+      router = networks.${rh.network}.tailnet_router;
+      users = userGrants;
+      teams = teamGrants;
+      ports = sort lessThan (unique (concatMap (g: g.ports) (userGrants ++ teamGrants)));
+    };
+
   topologyMemberRefs =
     t:
     concatLists [
@@ -1149,6 +1247,8 @@ let
     (mapAttrsToList (_: clusterParentRef) explicitClusters)
     (mapAttrsToList (_: clusterProjectRef) explicitClusters)
     (mapAttrsToList (_: networkEgressRefs) networks)
+    (mapAttrsToList (_: networkTailnetRouterContract) networks)
+    (mapAttrsToList (_: routedHostContract) routedHosts)
     (mapAttrsToList (_: topologyMemberRefs) topologies)
     (mapAttrsToList (_: switchOwnershipRefs) switches)
     (mapAttrsToList (_: switchLocationRefs) switches)
@@ -1160,6 +1260,7 @@ let
     adminScopeAsserts
     hostClusterCollisions
     clusterServiceCollisions
+    routedHostCollisions
     deployControllerContract
     deploySlurmContract
   ];
@@ -1172,6 +1273,7 @@ let
       deploymentRoles
       users
       hosts
+      routedHosts
       hostsByDeploymentRole
       unixAccessTiers
       switches
@@ -1228,6 +1330,10 @@ let
           };
         }) clusters.${cid}.network.services
       ) (filter (cid: clusters.${cid}.state != "retired") (attrNames clusters))
+    );
+
+    subnetRoutes = groupBy (route: route.router) (
+      filter (route: route.ports != [ ]) (map subnetRouteOf (attrValues routedHosts))
     );
 
     machineAge = mapAttrs (

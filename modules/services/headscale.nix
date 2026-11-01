@@ -12,6 +12,8 @@ let
   impermanenceEnabled = host != null && (host.impermanence.enable or false);
 in
 {
+  imports = [ ./headscale-users.nix ];
+
   options.services.headscale-server = {
     enable = lib.mkOption {
       type = lib.types.bool;
@@ -105,6 +107,11 @@ in
         };
 
         tailscale.extraUpFlags = [ "--advertise-exit-node" ];
+
+        headscale-users = {
+          enable = true;
+          usersFile = "${aclPkg}/users";
+        };
       };
 
       environment.persistence = lib.mkIf impermanenceEnabled {

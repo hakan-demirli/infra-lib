@@ -352,6 +352,19 @@ let
         services.headscale-server.serverUrl = "headscale.example";
       }
     );
+    headscale-users-disabled-payload = hasFailure "payload is configured" (
+      evalModule "/modules/services/headscale-users.nix" {
+        services.headscale-users.usersFile = "/etc/headscale-users";
+      }
+    );
+    headscale-users-requires-headscale = hasFailure "requires usersFile and services.headscale.enable" (
+      evalModule "/modules/services/headscale-users.nix" {
+        services.headscale-users = {
+          enable = true;
+          usersFile = "/etc/headscale-users";
+        };
+      }
+    );
     auto-upgrade-disabled-payload = hasFailure "payload is configured" (
       evalModule "/modules/common/auto-upgrade.nix" {
         cluster.autoUpgrade.flake = "github:example/fleet";
