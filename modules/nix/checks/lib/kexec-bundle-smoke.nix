@@ -7,7 +7,7 @@ let
   ];
 
   kexecSystem = self.inputs.nixpkgs.lib.nixosSystem {
-    inherit (pkgs) system;
+    inherit (pkgs.stdenv.hostPlatform) system;
     specialArgs = {
       rootKeys = testRootKeys;
     };
