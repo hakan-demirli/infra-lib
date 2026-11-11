@@ -16,6 +16,7 @@
   boot-policy = import ./boot-policy.nix { inherit pkgs self inputs; };
   boot-assessment = import ./boot-assessment.nix { inherit pkgs self; };
   fleet-upgrade = import ./fleet-upgrade.nix { inherit pkgs self; };
+  fleet-upgrade-push = import ./fleet-upgrade-push.nix { inherit pkgs self; };
   slurm-switch-keeps-jobs = import ./slurm-switch-keeps-jobs.nix { inherit pkgs; };
   slurm-rebooted-node-returns = import ./slurm-rebooted-node-returns.nix { inherit pkgs; };
   fleet-deploy-controller = import ./fleet-deploy-controller.nix { inherit pkgs self inputs; };

@@ -70,7 +70,7 @@ let
               else
                 {state: "waiting", reason: "dependency", revision: $revision}
               end
-            ) + {wave: $spec.wave, hold: (if $active[$host] == null then $spec.hold else null end), cache: $spec.cache}
+            ) + {wave: $spec.wave, hold: (if $active[$host] == null then $spec.hold else null end), cache: $spec.cache, delivery: $spec.delivery}
         ))
       }
   '';
@@ -82,10 +82,15 @@ let
       pkgs.curl
       pkgs.git
       pkgs.jq
+      pkgs.openssh
       config.nix.package
     ];
     text = ''
       repository=${lib.escapeShellArg cfg.repository}
+      push_key=${
+        lib.escapeShellArg (if cfg.push.sshKeyFile == null then "" else toString cfg.push.sshKeyFile)
+      }
+      push_domain=${lib.escapeShellArg (if cfg.push.domain == null then "" else cfg.push.domain)}
       branch=${lib.escapeShellArg cfg.branch}
       flake=${lib.escapeShellArg cfg.flake}
       plan_attr=${lib.escapeShellArg cfg.planAttr}
@@ -97,6 +102,12 @@ let
       today="$(date -u +%F)"
 
       mkdir -p "$state_dir/public" "$state_dir/roots"
+      export NIX_SSHOPTS="-o UserKnownHostsFile=$state_dir/known_hosts -o StrictHostKeyChecking=accept-new -o BatchMode=yes -o ConnectTimeout=20"
+
+      push() {
+        [[ -n $push_key && -n $push_domain ]] || return 1
+        nix copy --no-check-sigs --to "ssh-ng://${cfg.push.user}@$1.$push_domain?ssh-key=$push_key" "$2"
+      }
 
       write_atomic() {
         local target=$1
@@ -160,15 +171,23 @@ let
 
       old_builds="$(read_json "$state_dir/builds.json")"
       builds='{}'
-      while IFS=$'\t' read -r target_host revision cache; do
+      while IFS=$'\t' read -r target_host revision cache delivery; do
         key="$revision/$target_host"
         previous="$(jq -c --arg key "$key" '.[$key] // null' <<< "$old_builds")"
         if [[ "$(jq -r --argjson now "$now" '.toplevel != null or (.error != null and $now - .at < 3600)' <<< "$previous")" == true ]]; then
+          if [[ $delivery == push && "$(jq -r '.toplevel != null and .pushed != true' <<< "$previous")" == true ]]; then
+            echo "fleet-deploy: pushing $target_host at $revision"
+            if push "$target_host" "$(jq -r '.toplevel' <<< "$previous")"; then
+              previous="$(jq -c '.pushed = true' <<< "$previous")"
+            else
+              echo "fleet-deploy: pushing $target_host failed" >&2
+            fi
+          fi
           builds="$(jq -c --arg key "$key" --argjson build "$previous" '.[$key] = $build' <<< "$builds")"
           continue
         fi
         attribute="$(revision_url "$revision")#nixosConfigurations.\"$target_host\".config.system.build.toplevel"
-        if [[ $cache == true ]]; then
+        if [[ $cache == true || $delivery == push ]]; then
           echo "fleet-deploy: building $target_host at $revision"
           toplevel="$(nix build --out-link "$state_dir/roots/$target_host" --print-out-paths "$attribute")" || toplevel=
         else
@@ -177,12 +196,20 @@ let
         fi
         if [[ -n $toplevel ]]; then
           build="$(jq -nc --arg toplevel "$toplevel" --argjson now "$now" '{toplevel: $toplevel, at: $now}')"
+          if [[ $delivery == push ]]; then
+            echo "fleet-deploy: pushing $target_host at $revision"
+            if push "$target_host" "$toplevel"; then
+              build="$(jq -c '.pushed = true' <<< "$build")"
+            else
+              echo "fleet-deploy: pushing $target_host failed" >&2
+            fi
+          fi
         else
           echo "fleet-deploy: $target_host at $revision failed" >&2
           build="$(jq -nc --argjson now "$now" '{toplevel: null, error: "build failed", at: $now}')"
         fi
         builds="$(jq -c --arg key "$key" --argjson build "$build" '.[$key] = $build' <<< "$builds")"
-      done < <(jq -r '.hosts | to_entries[] | select(.value.revision != null) | [.key, .value.revision, .value.cache] | @tsv' <<< "$gated")
+      done < <(jq -r '.hosts | to_entries[] | select(.value.revision != null) | [.key, .value.revision, .value.cache, .value.delivery] | @tsv' <<< "$gated")
       write_atomic "$state_dir/builds.json" <<< "$builds"
 
       jq -n \
@@ -200,6 +227,7 @@ let
             | (if .value.revision == null then null else $builds["\(.value.revision)/\($host)"] end) as $build
             | .value |= (
                 if .state != "ready" then . + {toplevel: null}
+                elif $build.toplevel != null and .delivery == "push" and $build.pushed != true then . + {state: "waiting", reason: "push", toplevel: null}
                 elif $build.toplevel != null then . + {state: "planned", toplevel: $build.toplevel}
                 elif $build.error != null then . + {state: "build-failed", reason: "build", toplevel: null}
                 else . + {state: "waiting", reason: "build", toplevel: null}
@@ -268,6 +296,28 @@ in
     listenPort = lib.mkOption {
       type = lib.types.port;
       default = 5102;
+    };
+    push = {
+      sshKeyFile = lib.mkOption {
+        type = lib.types.nullOr lib.types.path;
+        default = null;
+        description = "Private SSH key, readable by the fleet-deploy user, that copies closures to push hosts. Null leaves them waiting.";
+      };
+      user = lib.mkOption {
+        type = lib.types.str;
+        default = "fleet-push";
+        description = "Account on push hosts that accepts the copied closures.";
+      };
+      domain = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default =
+          if config.services.tailscale ? loginServerHost then
+            "ts.${config.services.tailscale.loginServerHost}"
+          else
+            null;
+        defaultText = lib.literalExpression ''"ts.''${config.services.tailscale.loginServerHost}"'';
+        description = "DNS suffix under which push hosts are reached. Null leaves them waiting.";
+      };
     };
   };
 

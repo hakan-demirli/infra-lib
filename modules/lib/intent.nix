@@ -216,6 +216,9 @@ let
       (mkRule [ metricsTag ] deployControllerTag (toString fleetServicePorts.deployPlan) "deploy-plan")
       (mkRule [ nixCacheTag ] deployControllerTag (toString fleetServicePorts.nixCache) "deploy-cache")
     ]
+    ++ map (
+      hid: mkRule [ deployControllerTag ] (broadTagOf hostToCluster.${hid}) "22" "deploy-push"
+    ) pushHosts
     ++ concatMap (
       cid:
       let
@@ -274,6 +277,10 @@ let
     )
     && all (uid: elem uid owners) (hosts.${hid}.ssh_trust.root or [ ]);
 
+  pushHosts = filter (
+    hid: (hosts.${hid}.deploy.delivery or "pull") == "push" && hostToCluster ? ${hid}
+  ) inventory.deployableHosts;
+
   deployDependencies =
     hid:
     let
@@ -295,7 +302,7 @@ let
         system = hosts.${hid}.hardware.arch;
       in
       {
-        inherit (hosts.${hid}.deploy) wave hold;
+        inherit (hosts.${hid}.deploy) wave hold delivery;
         inherit system;
         after = deployDependencies hid;
         trusted = hostTrusted hid;

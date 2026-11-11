@@ -11,6 +11,8 @@ let
   defaultOnCalendar = "*-*-* 04..06:00/10:00";
   metricsDirectory = "/var/lib/prometheus-node-exporter-textfiles";
   stateDirectory = "/var/lib/fleet-upgrade";
+  pushUser = "fleet-push";
+  delivery = if host == null then "pull" else host.deploy.delivery or "pull";
   inPlan =
     host != null
     && cluster != null
@@ -38,7 +40,9 @@ let
     text = ''
       host=${lib.escapeShellArg (if host == null then "" else host.id)}
       plan_url=${lib.escapeShellArg (if cfg.planUrl == null then "" else cfg.planUrl)}
-      flake=${lib.escapeShellArg (if cfg.flake == null then "" else cfg.flake)}
+      ${lib.optionalString (delivery == "pull")
+        "flake=${lib.escapeShellArg (if cfg.flake == null then "" else cfg.flake)}"
+      }
       metrics=${metricsDirectory}/fleet-upgrade.prom
       failed_marker=${stateDirectory}/failed-toplevel
 
@@ -142,13 +146,24 @@ let
         fi
       fi
 
-      if ! built="$(nix build --no-link --print-out-paths \
-        "$flake?rev=$target_revision#nixosConfigurations.\"$host\".config.system.build.toplevel")"; then
-        finish failed build
-      fi
-      if [[ $built != "$toplevel" ]]; then
-        finish failed mismatch
-      fi
+      ${
+        if delivery == "push" then
+          ''
+            if ! nix-store --check-validity "$toplevel" 2>/dev/null; then
+              finish waiting push
+            fi
+          ''
+        else
+          ''
+            if ! built="$(nix build --no-link --print-out-paths \
+              "$flake?rev=$target_revision#nixosConfigurations.\"$host\".config.system.build.toplevel")"; then
+              finish failed build
+            fi
+            if [[ $built != "$toplevel" ]]; then
+              finish failed mismatch
+            fi
+          ''
+      }
       previous="$(readlink -f /run/current-system)"
       if ! nix-env --profile /nix/var/nix/profiles/system --set "$toplevel"; then
         finish failed profile
@@ -187,6 +202,11 @@ in
       example = "github:example/fleet";
       description = "Flake reference of the repository without a revision. The host builds the planned revision of it.";
     };
+    pushKeys = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      description = "SSH public keys of the deploy controller. On a push host they may only run the Nix daemon, to copy in planned closures.";
+    };
     healthAttempts = lib.mkOption {
       type = lib.types.ints.positive;
       default = 24;
@@ -208,17 +228,38 @@ in
             || (
               cfg.planUrl == null
               && cfg.flake == null
+              && cfg.pushKeys == [ ]
               && cfg.healthAttempts == 24
               && cfg.onCalendar == defaultOnCalendar
             );
           message = "cluster.autoUpgrade payload is configured while enable=false.";
         }
         {
-          assertion = !cfg.enable || (cfg.planUrl != null && cfg.flake != null && inPlan);
-          message = "cluster.autoUpgrade requires planUrl, flake, a fleet deploy controller, and a provisioned, monitored tailnet host.";
+          assertion =
+            !cfg.enable || (cfg.planUrl != null && (cfg.flake != null || delivery == "push") && inPlan);
+          message = "cluster.autoUpgrade requires planUrl, a fleet deploy controller, a provisioned, monitored tailnet host, and a flake unless the host is a push host.";
+        }
+        {
+          assertion = !cfg.enable || delivery != "push" || cfg.pushKeys != [ ];
+          message = "cluster.autoUpgrade on a push host requires pushKeys.";
         }
       ];
     }
+
+    (lib.mkIf (cfg.enable && delivery == "push") {
+      users = {
+        users.${pushUser} = {
+          isSystemUser = true;
+          group = pushUser;
+          useDefaultShell = true;
+          openssh.authorizedKeys.keys = map (
+            key: ''restrict,command="${config.nix.package}/bin/nix-daemon --stdio" ${key}''
+          ) cfg.pushKeys;
+        };
+        groups.${pushUser} = { };
+      };
+      nix.settings.trusted-users = [ pushUser ];
+    })
 
     (lib.mkIf cfg.enable {
       systemd = {

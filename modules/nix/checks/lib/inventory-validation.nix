@@ -627,6 +627,40 @@ let
       };
     };
 
+    deploy-accepts-a-push-host = {
+      desc = "a push host of the controller's system loads";
+      expectFail = false;
+      files = {
+        "users/inventory-user.nix" = validUser "inventory-user";
+        "deployment-roles/compute-role.nix" = validDeploymentRole "compute-role";
+        "hosts/lab/h-controller.nix" = validHost "h-controller" "deploy.controller = true;";
+        "hosts/lab/h-pushed.nix" = validHost "h-pushed" ''deploy.delivery = "push";'';
+      };
+    };
+
+    deploy-rejects-a-push-host-without-controller = {
+      desc = "a push host needs a deploy controller to build and copy its generation";
+      expectFail = true;
+      files = {
+        "users/inventory-user.nix" = validUser "inventory-user";
+        "deployment-roles/compute-role.nix" = validDeploymentRole "compute-role";
+        "hosts/lab/h-pushed.nix" = validHost "h-pushed" ''deploy.delivery = "push";'';
+      };
+    };
+
+    deploy-rejects-a-push-host-of-another-system = {
+      desc = "the controller builds push hosts, so they share its system";
+      expectFail = true;
+      files = {
+        "users/inventory-user.nix" = validUser "inventory-user";
+        "deployment-roles/compute-role.nix" = validDeploymentRole "compute-role";
+        "hosts/lab/h-controller.nix" = validHost "h-controller" "deploy.controller = true;";
+        "hosts/lab/h-pushed.nix" =
+          lib.replaceStrings [ ''arch = "x86_64-linux";'' ] [ ''arch = "aarch64-linux";'' ]
+            (validHost "h-pushed" ''deploy.delivery = "push";'');
+      };
+    };
+
     deploy-rejects-a-hold-without-reason = {
       desc = "a deploy hold needs a reason";
       expectFail = true;

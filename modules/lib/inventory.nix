@@ -678,7 +678,24 @@ let
       optional (
         !deployableHosts ? ${hid}
       ) "deploy controller '${hid}' must be a provisioned Linux tailnet host"
-    ) deployControllers;
+    ) deployControllers
+    ++ concatMap (
+      hid:
+      let
+        h = hosts.${hid};
+      in
+      optional (
+        h.deploy.delivery == "push" && deployControllers == [ ]
+      ) "host '${hid}' sets deploy.delivery = push but the fleet has no deploy controller"
+      ++ optional (
+        h.deploy.delivery == "push"
+        && deployControllers != [ ]
+        && h.hardware.arch != hosts.${head deployControllers}.hardware.arch
+      ) "host '${hid}' sets deploy.delivery = push but its system differs from the deploy controller's"
+      ++ optional (
+        h.deploy.delivery == "push" && h.deploy.controller
+      ) "deploy controller '${hid}' cannot receive its own generation by push"
+    ) (attrNames deployableHosts);
 
   hostRoleUniqueness =
     h:

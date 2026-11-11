@@ -398,6 +398,18 @@ in
             dst = [ "${deployControllerTag}:${toString fleetServicePorts.nixCache}" ];
           }
         ]
+        ++
+          map
+            (hid: {
+              action = "accept";
+              src = [ deployControllerTag ];
+              dst = [ "${broadTagOf inventory.hostToCluster.${hid}}:22" ];
+            })
+            (
+              filter (
+                hid: (hosts.${hid}.deploy.delivery or "pull") == "push" && inventory.hostToCluster ? ${hid}
+              ) inventory.deployableHosts
+            )
         ++ concatMap (
           cid:
           let

@@ -383,7 +383,7 @@ let
         cluster.autoUpgrade.flake = "github:example/fleet";
       }
     );
-    auto-upgrade-requires-plan-membership = hasFailure "requires planUrl, flake" (
+    auto-upgrade-requires-plan-membership = hasFailure "requires planUrl, a fleet deploy controller" (
       evalModule "/modules/common/auto-upgrade.nix" {
         cluster.autoUpgrade = {
           enable = true;

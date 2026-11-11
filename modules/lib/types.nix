@@ -994,6 +994,19 @@ let
               default = false;
               description = "Builds, gates and serves the deployments of the whole fleet.";
             };
+            delivery = mkOption {
+              type = enum [
+                "pull"
+                "push"
+              ];
+              default = "pull";
+              description = ''
+                How the host receives its generation. A pull host builds the
+                planned revision from the fleet flake. A push host reaches no
+                private service: the deploy controller builds its generation and
+                copies only that closure into its store over SSH.
+              '';
+            };
           };
         };
         default = { };
