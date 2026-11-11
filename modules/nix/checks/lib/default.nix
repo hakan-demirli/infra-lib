@@ -20,7 +20,6 @@
   slurm-switch-keeps-jobs = import ./slurm-switch-keeps-jobs.nix { inherit pkgs; };
   slurm-rebooted-node-returns = import ./slurm-rebooted-node-returns.nix { inherit pkgs; };
   fleet-deploy-controller = import ./fleet-deploy-controller.nix { inherit pkgs self inputs; };
-  ci-workflows = import ./ci-workflows.nix { inherit pkgs; };
   impermanence-contract = import ./impermanence-contract.nix {
     inherit pkgs self inputs;
   };
