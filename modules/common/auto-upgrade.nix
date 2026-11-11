@@ -29,6 +29,7 @@ let
     runtimeInputs = [
       pkgs.coreutils
       pkgs.curl
+      pkgs.git
       pkgs.jq
       pkgs.util-linux
       config.nix.package

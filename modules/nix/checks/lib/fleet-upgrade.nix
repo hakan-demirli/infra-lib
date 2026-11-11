@@ -6,6 +6,8 @@ let
   baseRevision = "0000000000000000000000000000000000000001";
   nextRevision = "0000000000000000000000000000000000000002";
   repo = "/var/lib/fleet-repo";
+  # Hosts fetch the deploy branch from a forge; nix needs git for a remote repository.
+  served = "/srv/fleet.git";
 in
 pkgs.testers.runNixOSTest {
   name = "fleet-upgrade";
@@ -36,7 +38,7 @@ pkgs.testers.runNixOSTest {
       cluster.autoUpgrade = {
         enable = true;
         planUrl = "http://127.0.0.1:8000/plan.json";
-        flake = "git+file://${repo}";
+        flake = "git+http://127.0.0.1:8000/fleet.git";
         healthAttempts = 3;
       };
       system.configurationRevision = baseRevision;
@@ -108,6 +110,8 @@ pkgs.testers.runNixOSTest {
           machine.succeed(
               "git -C ${repo} add flake.nix",
               "git -C ${repo} -c user.name=ci -c user.email=ci@example commit -q -m generation",
+              "git -C ${repo} push -q ${served} HEAD:deploy",
+              "git -C ${served} update-server-info",
           )
           revision = machine.succeed("git -C ${repo} rev-parse HEAD").strip()
           toplevel = machine.succeed(
@@ -130,7 +134,7 @@ pkgs.testers.runNixOSTest {
 
       machine.wait_for_unit("plan-server.service")
       machine.wait_for_open_port(8000)
-      machine.succeed("git init -q -b deploy ${repo}")
+      machine.succeed("git init -q -b deploy ${repo}", "git init -q --bare -b deploy ${served}")
       boot_id = machine.succeed("cat /proc/sys/kernel/random/boot_id")
       history = ["${nextRevision}", "${baseRevision}"]
 
