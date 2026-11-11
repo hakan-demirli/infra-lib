@@ -178,6 +178,14 @@ let
             clients = [ ];
             hosts = [ "other-host" ];
           };
+          site = {
+            port = 80;
+            role = "controller";
+            cluster = "fleet";
+            clients = [ ];
+            hosts = [ "svc-host" ];
+            firewall = "public";
+          };
         };
       };
       modules = [
@@ -241,6 +249,11 @@ let
     cluster-services-reject-global-port = hasFailure "tailnetOnlyTCPPorts 8317" (evalClusterServices {
       networking.firewall.allowedTCPPorts = [ 8317 ];
     });
+    cluster-services-leave-public-ports-to-their-owner =
+      let
+        config = evalClusterServices { networking.firewall.allowedTCPPorts = [ 80 ]; };
+      in
+      !lib.elem 80 (tailnetPortsOf config) && !hasFailure "tailnetOnlyTCPPorts" config;
     jellyfin-opens-only-on-tailnet =
       lib.all (port: lib.elem port (tailnetPortsOf jellyfin)) [
         8096

@@ -1322,7 +1322,12 @@ let
         mapAttrsToList (name: s: {
           inherit name;
           value = {
-            inherit (s) port role clients;
+            inherit (s)
+              port
+              role
+              clients
+              firewall
+              ;
             cluster = cid;
             hosts = filter (hid: elem s.role (hostTopologyRolesOf hid)) (
               effectiveAllClusterHosts.${cid} or [ ]

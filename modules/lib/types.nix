@@ -1264,6 +1264,14 @@ let
         default = [ ];
         description = "Other clusters whose nodes may connect. Nodes of the declaring cluster can always connect.";
       };
+      firewall = mkOption {
+        type = enum [
+          "tailnet-only"
+          "public"
+        ];
+        default = "tailnet-only";
+        description = "Whether the serving nodes open the port on the tailnet only, or another module already opens it publicly and only the ACL rule is generated.";
+      };
     };
   };
 

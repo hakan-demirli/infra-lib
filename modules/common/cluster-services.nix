@@ -1,4 +1,5 @@
 {
+  config,
   lib,
   cluster ? null,
   host ? null,
@@ -18,6 +19,13 @@ let
       cluster = lib.mkOption { type = lib.types.str; };
       clients = lib.mkOption { type = lib.types.listOf lib.types.str; };
       hosts = lib.mkOption { type = lib.types.listOf lib.types.str; };
+      firewall = lib.mkOption {
+        type = lib.types.enum [
+          "tailnet-only"
+          "public"
+        ];
+        default = "tailnet-only";
+      };
     };
   };
 in
@@ -27,11 +35,13 @@ in
   options.cluster.services = lib.mkOption {
     type = lib.types.attrsOf service;
     readOnly = true;
-    description = "Inventory cluster services that this host serves. Their TCP ports open only on the tailnet.";
+    description = "Inventory cluster services that this host serves. Their TCP ports open only on the tailnet unless the service is public.";
   };
 
   config = {
     cluster.services = served;
-    cluster.firewall.tailnetOnlyTCPPorts = lib.mapAttrsToList (_: s: s.port) served;
+    cluster.firewall.tailnetOnlyTCPPorts = lib.mapAttrsToList (_: s: s.port) (
+      lib.filterAttrs (_: s: s.firewall == "tailnet-only") config.cluster.services
+    );
   };
 }
