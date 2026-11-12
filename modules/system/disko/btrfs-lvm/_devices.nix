@@ -2,32 +2,8 @@
   lib,
   device,
   swapSize,
-  additionalDisks ? [ ],
   separateHome ? true,
 }:
-let
-  additionalDiskConfigs = lib.listToAttrs (
-    lib.imap0 (
-      idx: diskPath:
-      lib.nameValuePair "extra${toString idx}" {
-        device = diskPath;
-        type = "disk";
-        content = {
-          type = "gpt";
-          partitions = {
-            primary = {
-              size = "100%";
-              content = {
-                type = "lvm_pv";
-                vg = "root_vg";
-              };
-            };
-          };
-        };
-      }
-    ) additionalDisks
-  );
-in
 {
   disk = {
     main = {
@@ -70,8 +46,7 @@ in
         };
       };
     };
-  }
-  // additionalDiskConfigs;
+  };
 
   lvm_vg = {
     root_vg = {

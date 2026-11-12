@@ -17,7 +17,6 @@ in
       inherit lib separateHome;
       device = d.root_disk;
       swapSize = d.swap_size;
-      additionalDisks = [ ];
     };
   };
 }

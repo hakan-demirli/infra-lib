@@ -35,7 +35,6 @@ let
   btrfsLvm = mkBtrfsLvm {
     device = "/dev/sdb";
     swapSize = "16G";
-    additionalDisks = [ ];
   };
 
   dispatcherEval =
