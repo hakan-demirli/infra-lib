@@ -23,6 +23,9 @@
   impermanence-contract = import ./impermanence-contract.nix {
     inherit pkgs self inputs;
   };
+  local-storage-contract = import ./local-storage-contract.nix {
+    inherit pkgs self inputs;
+  };
   home-storage-contract = import ./home-storage-contract.nix {
     inherit pkgs self inputs;
   };

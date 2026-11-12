@@ -59,6 +59,7 @@ let
     (libRoot + "/modules/system/boot")
     (libRoot + "/modules/system/impermanence.nix")
     (libRoot + "/modules/system/ephemeral-root.nix")
+    (libRoot + "/modules/system/local-storage.nix")
     (libRoot + "/modules/system/home-storage")
   ];
 
@@ -181,6 +182,7 @@ let
                 bmc
                 disko
                 ceph
+                local_storage
                 boot
                 impermanence
                 labels

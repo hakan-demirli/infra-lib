@@ -536,6 +536,178 @@ let
       };
     };
 
+    local-storage-accepts-separate-disks = {
+      desc = "local_storage accepts separate by-id disks for /tmp and /scratch";
+      expectFail = false;
+      files = {
+        "users/inventory-user.nix" = validUser "inventory-user";
+        "deployment-roles/compute-role.nix" = validDeploymentRole "compute-role";
+        "hosts/lab/h-storage.nix" = validHost "h-storage" ''
+          disko = {
+            root_disk = "/dev/disk/by-id/test-root-disk";
+            layout = "ext4-single";
+            managed = true;
+          };
+          local_storage = {
+            tmp.disk = "/dev/disk/by-id/test-tmp-disk";
+            scratch.disk = "/dev/disk/by-id/test-scratch-disk";
+            persistent_tmp = [ "opencode" ];
+          };
+        '';
+      };
+    };
+
+    local-storage-accepts-shared-disk = {
+      desc = "local_storage accepts one disk for both /tmp and /scratch";
+      expectFail = false;
+      files = {
+        "users/inventory-user.nix" = validUser "inventory-user";
+        "deployment-roles/compute-role.nix" = validDeploymentRole "compute-role";
+        "hosts/lab/h-storage.nix" = validHost "h-storage" ''
+          disko = {
+            root_disk = "/dev/disk/by-id/test-root-disk";
+            layout = "ext4-single";
+            managed = true;
+          };
+          local_storage = {
+            tmp.disk = "/dev/disk/by-id/test-scratch-disk";
+            scratch.disk = "/dev/disk/by-id/test-scratch-disk";
+          };
+        '';
+      };
+    };
+
+    local-storage-rejects-unstable-disk = {
+      desc = "local_storage disks must be /dev/disk/by-id paths";
+      expectFail = true;
+      files = {
+        "users/inventory-user.nix" = validUser "inventory-user";
+        "deployment-roles/compute-role.nix" = validDeploymentRole "compute-role";
+        "hosts/lab/h-storage.nix" = validHost "h-storage" ''
+          disko = {
+            root_disk = "/dev/disk/by-id/test-root-disk";
+            layout = "ext4-single";
+            managed = true;
+          };
+          local_storage.tmp.disk = "/dev/nvme1n1";
+        '';
+      };
+    };
+
+    local-storage-rejects-root-disk-for-tmp = {
+      desc = "local_storage.tmp.disk must not be the root disk";
+      expectFail = true;
+      files = {
+        "users/inventory-user.nix" = validUser "inventory-user";
+        "deployment-roles/compute-role.nix" = validDeploymentRole "compute-role";
+        "hosts/lab/h-storage.nix" = validHost "h-storage" ''
+          disko = {
+            root_disk = "/dev/disk/by-id/test-root-disk";
+            layout = "ext4-single";
+            managed = true;
+          };
+          local_storage.tmp.disk = "/dev/disk/by-id/test-root-disk";
+        '';
+      };
+    };
+
+    local-storage-rejects-root-disk-for-scratch = {
+      desc = "local_storage.scratch.disk must not be the root disk";
+      expectFail = true;
+      files = {
+        "users/inventory-user.nix" = validUser "inventory-user";
+        "deployment-roles/compute-role.nix" = validDeploymentRole "compute-role";
+        "hosts/lab/h-storage.nix" = validHost "h-storage" ''
+          disko = {
+            root_disk = "/dev/disk/by-id/test-root-disk";
+            layout = "ext4-single";
+            managed = true;
+          };
+          local_storage.scratch.disk = "/dev/disk/by-id/test-root-disk";
+        '';
+      };
+    };
+
+    local-storage-requires-managed-disko = {
+      desc = "local_storage disks require managed Disko";
+      expectFail = true;
+      files = {
+        "users/inventory-user.nix" = validUser "inventory-user";
+        "deployment-roles/compute-role.nix" = validDeploymentRole "compute-role";
+        "hosts/lab/h-storage.nix" = validHost "h-storage" ''
+          disko = {
+            root_disk = "/dev/disk/by-id/test-root-disk";
+            layout = "ext4-single";
+            managed = false;
+          };
+          local_storage.scratch.disk = "/dev/disk/by-id/test-scratch-disk";
+        '';
+      };
+    };
+
+    local-storage-rejects-persistent-tmp-without-scratch = {
+      desc = "local_storage.persistent_tmp requires a scratch disk";
+      expectFail = true;
+      files = {
+        "users/inventory-user.nix" = validUser "inventory-user";
+        "deployment-roles/compute-role.nix" = validDeploymentRole "compute-role";
+        "hosts/lab/h-storage.nix" = validHost "h-storage" ''
+          disko = {
+            root_disk = "/dev/disk/by-id/test-root-disk";
+            layout = "ext4-single";
+            managed = true;
+          };
+          local_storage = {
+            tmp.disk = "/dev/disk/by-id/test-tmp-disk";
+            persistent_tmp = [ "opencode" ];
+          };
+        '';
+      };
+    };
+
+    local-storage-rejects-duplicate-persistent-tmp = {
+      desc = "local_storage.persistent_tmp entries are unique";
+      expectFail = true;
+      files = {
+        "users/inventory-user.nix" = validUser "inventory-user";
+        "deployment-roles/compute-role.nix" = validDeploymentRole "compute-role";
+        "hosts/lab/h-storage.nix" = validHost "h-storage" ''
+          disko = {
+            root_disk = "/dev/disk/by-id/test-root-disk";
+            layout = "ext4-single";
+            managed = true;
+          };
+          local_storage = {
+            scratch.disk = "/dev/disk/by-id/test-scratch-disk";
+            persistent_tmp = [
+              "opencode"
+              "opencode"
+            ];
+          };
+        '';
+      };
+    };
+
+    local-storage-rejects-path-in-persistent-tmp = {
+      desc = "local_storage.persistent_tmp entries are names, not paths";
+      expectFail = true;
+      files = {
+        "users/inventory-user.nix" = validUser "inventory-user";
+        "deployment-roles/compute-role.nix" = validDeploymentRole "compute-role";
+        "hosts/lab/h-storage.nix" = validHost "h-storage" ''
+          disko = {
+            root_disk = "/dev/disk/by-id/test-root-disk";
+            layout = "ext4-single";
+            managed = true;
+          };
+          local_storage = {
+            scratch.disk = "/dev/disk/by-id/test-scratch-disk";
+            persistent_tmp = [ "../etc" ];
+          };
+        '';
+      };
+    };
+
     impermanence-disabled-rejects-payload = {
       desc = "disabled impermanence rejects persistence payload";
       expectFail = true;

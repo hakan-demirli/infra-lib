@@ -14,6 +14,7 @@ let
   hostId = strMatching "^[a-z][a-z0-9-]*[a-z0-9]$";
   date = strMatching "^[0-9]{4}-[0-9]{2}-[0-9]{2}$";
   tailnetTag = strMatching "^tag:[a-z0-9][a-z0-9-]*$";
+  diskById = strMatching "^/dev/disk/by-id/[^/]+$";
 
   memberRole = enum [
     "admin"
@@ -539,10 +540,6 @@ let
         type = listOf anything;
         default = [ ];
       };
-      scratch_disks = mkOption {
-        type = listOf str;
-        default = [ ];
-      };
     };
   };
 
@@ -634,6 +631,43 @@ let
       osd_disks = mkOption {
         type = listOf cephOsdDisk;
         default = [ ];
+      };
+    };
+  };
+
+  localStorageRole = submodule {
+    options = {
+      disk = mkOption {
+        type = nullOr diskById;
+        default = null;
+        description = ''
+          Disk for this role. Both roles can name the same disk; they
+          then share one filesystem. The host boots without the disk.
+        '';
+      };
+    };
+  };
+
+  hostLocalStorage = submodule {
+    options = {
+      tmp = mkOption {
+        type = localStorageRole;
+        default = { };
+        description = "Disk for /tmp. The boot resets it. Without a disk, /tmp stays on the root disk.";
+      };
+      scratch = mkOption {
+        type = localStorageRole;
+        default = { };
+        description = "Disk for /scratch: rebuildable data that survives reboots and has no backup.";
+      };
+      persistent_tmp = mkOption {
+        type = listOf slug;
+        default = [ ];
+        description = ''
+          Names under /tmp that survive reboots and the /tmp age
+          cleaner. Each /tmp/<name> is a bind mount of
+          /scratch/tmp/<name>. For tools that hardcode a /tmp path.
+        '';
       };
     };
   };
@@ -923,6 +957,10 @@ let
       };
       ceph = mkOption {
         type = hostCeph;
+        default = { };
+      };
+      local_storage = mkOption {
+        type = hostLocalStorage;
         default = { };
       };
       boot = mkOption {

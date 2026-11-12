@@ -514,6 +514,37 @@ let
       ) "host '${h.id}' installer requires a stable /dev/disk/by-id root_disk")
     ];
 
+  hostLocalStorageContract =
+    h:
+    let
+      s = h.local_storage;
+      disks = filter (disk: disk != null) [
+        s.tmp.disk
+        s.scratch.disk
+      ];
+      hasDisk = disks != [ ];
+    in
+    concatLists [
+      (optional (
+        hasDisk && h.hardware.os != "linux"
+      ) "host '${h.id}' declares local_storage disks but is not a Linux host")
+      (optional (
+        hasDisk && (h.disko == null || !h.disko.managed)
+      ) "host '${h.id}' declares local_storage disks while disko.managed=false")
+      (optional (
+        h.disko != null && elem h.disko.root_disk disks
+      ) "host '${h.id}' uses its disko.root_disk as a local_storage disk")
+      (optional (any (
+        disk: elem disk (map (osd: osd.path) h.ceph.osd_disks)
+      ) disks) "host '${h.id}' uses a ceph.osd_disks path as a local_storage disk")
+      (optional (
+        s.scratch.disk == null && s.persistent_tmp != [ ]
+      ) "host '${h.id}' sets local_storage.persistent_tmp without local_storage.scratch.disk")
+      (optional (
+        length s.persistent_tmp != length (unique s.persistent_tmp)
+      ) "host '${h.id}' has duplicate local_storage.persistent_tmp entries")
+    ];
+
   hostMonitoringContract =
     h:
     concatLists [
@@ -1247,6 +1278,7 @@ let
     (mapAttrsToList (_: hostSshTrustRefs) hosts)
     (mapAttrsToList (_: hostImpermanenceContract) hosts)
     (mapAttrsToList (_: hostInstallerContract) hosts)
+    (mapAttrsToList (_: hostLocalStorageContract) hosts)
     (mapAttrsToList (_: hostMonitoringContract) hosts)
     (mapAttrsToList (_: hostSlurmContract) hosts)
     (mapAttrsToList (_: hostVirtContract) hosts)
