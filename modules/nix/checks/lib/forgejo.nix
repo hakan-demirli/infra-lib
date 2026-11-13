@@ -81,14 +81,18 @@ pkgs.testers.runNixOSTest {
         return forge.succeed("curl -sf " + auth + " " + api + path)
 
 
-    def api_post(path, payload):
+    def api_send(method, path, payload):
         return forge.succeed(
-            "curl -sf " + auth + " -X POST -H 'Content-Type: application/json' -d "
+            "curl -sf " + auth + " -X " + method + " -H 'Content-Type: application/json' -d "
             + shlex.quote(json.dumps(payload))
             + " "
             + api
             + path
         )
+
+
+    def api_post(path, payload):
+        return api_send("POST", path, payload)
 
 
     start_all()
@@ -109,6 +113,7 @@ pkgs.testers.runNixOSTest {
     whoami = json.loads(api_get("/user"))
     assert whoami["login"] == "${adminUser}", whoami
     assert whoami["is_admin"] is True, whoami
+    assert whoami["email"] == "${adminUser}@example.com", whoami
 
     forge.succeed("mkdir -p /root/.ssh")
     forge.succeed("ssh-keygen -q -t ed25519 -N \"\" -f /root/.ssh/id_ed25519")
@@ -124,9 +129,13 @@ pkgs.testers.runNixOSTest {
     )
     forge.succeed("test -f /tmp/demo/README.md")
 
+    api_send("PATCH", "/admin/users/${adminUser}", {"email": "drifted@example.com"})
+    assert json.loads(api_get("/user"))["email"] == "drifted@example.com"
+
     forge.succeed("systemctl restart forgejo-admin.service")
     reprovisioned = json.loads(api_get("/user"))
     assert reprovisioned["login"] == "${adminUser}", reprovisioned
+    assert reprovisioned["email"] == "${adminUser}@example.com", reprovisioned
 
     print("FORGEJO VERIFICATIONS PASSED")
   '';

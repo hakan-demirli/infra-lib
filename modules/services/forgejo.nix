@@ -27,11 +27,16 @@ let
   provisionAdmin = pkgs.writeShellApplication {
     name = "forgejo-provision-admin";
     runtimeInputs = [
+      pkgs.coreutils
+      pkgs.curl
       pkgs.gawk
+      pkgs.jq
       forgejo.package
     ];
     text = ''
       username=${lib.escapeShellArg cfg.admin.username}
+      email=${lib.escapeShellArg cfg.admin.email}
+      api=${lib.escapeShellArg "http://127.0.0.1:${toString cfg.listenPort}/api/v1"}
       password_file="$CREDENTIALS_DIRECTORY/admin-password"
 
       if [[ ! -s "$password_file" ]]; then
@@ -50,9 +55,25 @@ let
         forgejo admin user create \
           --admin \
           --username "$username" \
-          --email ${lib.escapeShellArg cfg.admin.email} \
+          --email "$email" \
           --password "$password" \
           --must-change-password=false
+      fi
+
+      netrc="$RUNTIME_DIRECTORY/netrc"
+      printf 'machine 127.0.0.1 login %s password %s\n' "$username" "$password" > "$netrc"
+
+      for _ in $(seq 60); do
+        curl -fsS -o /dev/null "$api/version" && break
+        sleep 2
+      done
+
+      current="$(curl -fsS --netrc-file "$netrc" "$api/user" | jq -r .email)"
+      if [[ $current != "$email" ]]; then
+        echo "forgejo-provision-admin: changing the administrator address from $current to $email"
+        jq -nc --arg email "$email" '{email: $email}' \
+          | curl -fsS --netrc-file "$netrc" -X PATCH -H 'Content-Type: application/json' \
+            --data @- -o /dev/null "$api/admin/users/$username"
       fi
     '';
   };
@@ -91,7 +112,7 @@ in
 
       email = lib.mkOption {
         type = lib.types.str;
-        description = "Address recorded for the provisioned administrator.";
+        description = "Primary address of the administrator, restored on every activation. Forgejo writes it into the commits it creates.";
       };
 
       password = {
@@ -177,6 +198,8 @@ in
           Group = forgejo.group;
           WorkingDirectory = forgejo.stateDir;
           LoadCredential = [ "admin-password:${passwordPath}" ];
+          RuntimeDirectory = "forgejo-admin";
+          RuntimeDirectoryMode = "0700";
           ExecStart = lib.getExe provisionAdmin;
           UMask = "0027";
         };
