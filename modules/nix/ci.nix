@@ -7,9 +7,7 @@ in
   flake.herculesCI =
     { primaryRepo, ... }:
     inputs.self.lib.mkForgeFlow {
-      effects = inputs.nixbot.lib.effects { inherit pkgs; };
-      inherit (pkgs) git;
-      inherit primaryRepo;
+      inherit pkgs primaryRepo;
       bot = {
         name = "hakan-demirli-infra-dependencies[bot]";
         email = "328803426+hakan-demirli-infra-dependencies[bot]@users.noreply.github.com";

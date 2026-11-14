@@ -1,18 +1,25 @@
-{ lib }:
+{ lib, nixbot }:
 {
-  effects,
-  git,
+  pkgs,
   primaryRepo,
   bot,
   update,
 }:
+let
+  source = pkgs.applyPatches {
+    name = "nixbot-source";
+    src = nixbot;
+    patches = [ ./patches/nixbot-flake-update-fast-forward-only.patch ];
+  };
+  effects = import "${source}/herculesCI/effects-lib.nix" { inherit pkgs; };
+in
 {
   onPush.default.outputs.effects = lib.optionalAttrs (primaryRepo.branch == "unstable") {
     promote-main = effects.mkEffect {
       name = "promote-main";
       checkout = true;
       lock = "promote-main";
-      inputs = [ git ];
+      inputs = [ pkgs.git ];
       effectScript = ''
         set -euo pipefail
         candidate=${primaryRepo.rev}

@@ -1,4 +1,4 @@
-{ lib, ... }:
+{ lib, inputs, ... }:
 let
   libDir = ../lib;
 
@@ -167,6 +167,9 @@ in
       mkDiskoInstallerBundle
       ;
     mkHost = mkHostFn;
-    mkForgeFlow = import (libDir + "/forge-flow.nix") { inherit lib; };
+    mkForgeFlow = import (libDir + "/forge-flow.nix") {
+      inherit lib;
+      inherit (inputs) nixbot;
+    };
   };
 }

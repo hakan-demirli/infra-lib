@@ -1,0 +1,17 @@
+--- a/herculesCI/flake-update.nix
++++ b/herculesCI/flake-update.nix
+@@ -71,10 +71,14 @@
+   "merge"
+   "rebase"
+   "squash"
++  "fast-forward-only"
+ ];
+ assert lib.assertMsg (
+   autoMergeMethod != null -> forgeType != "gitlab"
+ ) "flakeUpdate: autoMergeMethod needs forgeType github or gitea";
++assert lib.assertMsg (
++  autoMergeMethod == "fast-forward-only" -> forgeType == "gitea"
++) "flakeUpdate: autoMergeMethod fast-forward-only needs forgeType gitea";
+ assert passedArgs ? flakes -> inputs == [ ] && excludeInputs == [ ] && commitSummary == "";
+ assert flakes != { };
+ let
