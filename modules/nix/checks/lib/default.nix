@@ -44,6 +44,7 @@
   };
   user-offboarding = import ./user-offboarding.nix { inherit pkgs self; };
   libvirtd-shutdown = import ./libvirtd-shutdown.nix { inherit pkgs self; };
+  btrfs-reclaim = import ./btrfs-reclaim.nix { inherit pkgs self; };
   virt-host-smoke = import ./virt-host-smoke.nix { inherit pkgs self; };
   headscale-ha-shared-state-via-postgres = import ./headscale-ha-shared-state-via-postgres.nix {
     inherit pkgs;
