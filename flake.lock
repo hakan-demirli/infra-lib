@@ -136,6 +136,28 @@
         "type": "github"
       }
     },
+    "nixbot": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ],
+        "treefmt-nix": "treefmt-nix"
+      },
+      "locked": {
+        "lastModified": 1794596685,
+        "narHash": "sha256-ghq3rq4MmeWtxYRffuIwpdpnq9/hM3KKFcVi4ZMnQqk=",
+        "owner": "hakan-demirli",
+        "repo": "nixbot",
+        "rev": "c0d385ef405c903d9e3bd8527baadba57b62b099",
+        "type": "github"
+      },
+      "original": {
+        "owner": "hakan-demirli",
+        "ref": "flake-update-fast-forward-only",
+        "repo": "nixbot",
+        "type": "github"
+      }
+    },
     "nixos-hardware": {
       "inputs": {
         "nixpkgs": "nixpkgs_2"
@@ -257,6 +279,7 @@
         "impermanence": "impermanence",
         "import-tree": "import-tree",
         "nix-darwin": "nix-darwin",
+        "nixbot": "nixbot",
         "nixos-hardware": "nixos-hardware",
         "nixpkgs": "nixpkgs_3",
         "nixpkgs-ceph": "nixpkgs-ceph",
@@ -302,6 +325,27 @@
       "original": {
         "owner": "numtide",
         "repo": "srvos",
+        "type": "github"
+      }
+    },
+    "treefmt-nix": {
+      "inputs": {
+        "nixpkgs": [
+          "nixbot",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1780220602,
+        "narHash": "sha256-eynAfOmbmxJnkp7YewvCEbShNnnYJ9gLLqkzsYtBPeM=",
+        "owner": "numtide",
+        "repo": "treefmt-nix",
+        "rev": "db947814a175b7ca6ded66e21383d938df01c227",
+        "type": "github"
+      },
+      "original": {
+        "owner": "numtide",
+        "repo": "treefmt-nix",
         "type": "github"
       }
     }

@@ -167,5 +167,6 @@ in
       mkDiskoInstallerBundle
       ;
     mkHost = mkHostFn;
+    mkForgeFlow = import (libDir + "/forge-flow.nix") { inherit lib; };
   };
 }

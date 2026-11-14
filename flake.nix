@@ -34,5 +34,9 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     nur.url = "github:nix-community/NUR";
+    nixbot = {
+      url = "github:hakan-demirli/nixbot/flake-update-fast-forward-only";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 }
