@@ -35,6 +35,28 @@ in
         git push origin "$candidate:refs/heads/main"
       '';
     };
+
+    # Forgejo deletes a merged head branch only when the merge request asks for it.
+    prune-merged-branches = effects.mkEffect {
+      name = "prune-merged-branches";
+      checkout = true;
+      lock = "prune-merged-branches";
+      inputs = [ pkgs.git ];
+      effectScript = ''
+        set -euo pipefail
+        git fetch --quiet --prune --no-tags origin '+refs/heads/*:refs/remotes/origin/*'
+        git for-each-ref --merged refs/remotes/origin/unstable \
+          --format='%(refname:lstrip=3) %(objectname)' refs/remotes/origin |
+          while read -r branch rev; do
+            case $branch in
+              HEAD | main | unstable) continue ;;
+            esac
+            echo "deleting merged branch $branch"
+            git push --force-with-lease="refs/heads/$branch:$rev" origin ":refs/heads/$branch" ||
+              echo "branch $branch moved; keeping it"
+          done
+      '';
+    };
   };
 
   onSchedule.update-flake-inputs = {
