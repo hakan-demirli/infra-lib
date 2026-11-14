@@ -10,6 +10,22 @@ let
   forgejo = config.services.forgejo;
   impermanenceEnabled = host != null && (host.impermanence.enable or false);
 
+  # The project API of forgejo/forgejo#13714, which no Forgejo release has yet.
+  # Its tests expect the Go 1.27 toolchain that the branch pins.
+  package =
+    pkgs.callPackage
+      (import "${pkgs.path}/pkgs/by-name/fo/forgejo/generic.nix" {
+        version = "18.0.0-dev-288-2d12edec";
+        rev = "2d12edec93f56743a2ad5519be86e61d707aa11e";
+        hash = "sha256-UyJyDSXM5y/3c/vxNzJFOCGPP99cTzBdx/8ivQFVLKQ=";
+        npmDepsHash = "sha256-IjWhDYewobHG57taeJLKjhm/6/YKH5uiEse1nos3g3I=";
+        vendorHash = "sha256-JU/6fW+FSwYINXVMpxPFym3lFYBzUlUSG3SVl3Hbzrw=";
+      })
+      {
+        forgejo = package;
+        buildGoModule = pkgs.buildGo127Module;
+      };
+
   useSops = cfg.admin.password.source == "sops";
   sopsKeyName =
     if cfg.admin.password.sopsKeyName == null then
@@ -153,8 +169,14 @@ in
 
       services.forgejo = {
         enable = true;
+        inherit package;
         lfs.enable = true;
         database.type = "sqlite3";
+
+        # Forgejo 18 has no INTERNAL_TOKEN (forgejo/forgejo#14148); the nixpkgs module still declares it.
+        secrets.security = lib.mkForce {
+          SECRET_KEY = "${forgejo.customDir}/conf/secret_key";
+        };
 
         settings = {
           server = {
@@ -175,6 +197,32 @@ in
           actions.ENABLED = false;
           repository.DEFAULT_BRANCH = "main";
           "cron.update_checker".ENABLED = false;
+        };
+      };
+
+      systemd.services.forgejo-secrets = lib.mkForce {
+        description = "Forgejo secret bootstrap helper";
+        script = ''
+          if [ ! -s '${forgejo.secrets.security.SECRET_KEY}' ]; then
+            forgejo generate secret SECRET_KEY > '${forgejo.secrets.security.SECRET_KEY}'
+          fi
+
+          if [ ! -s '${forgejo.secrets.oauth2.JWT_SECRET}' ]; then
+            forgejo generate secret JWT_SECRET > '${forgejo.secrets.oauth2.JWT_SECRET}'
+          fi
+
+          if [ ! -s '${forgejo.secrets.server.LFS_JWT_SECRET}' ]; then
+            forgejo generate secret LFS_JWT_SECRET > '${forgejo.secrets.server.LFS_JWT_SECRET}'
+          fi
+        '';
+        path = [ forgejo.package ];
+        serviceConfig = {
+          Type = "oneshot";
+          RemainAfterExit = true;
+          User = forgejo.user;
+          Group = forgejo.group;
+          ReadWritePaths = [ forgejo.customDir ];
+          UMask = "0077";
         };
       };
 

@@ -129,6 +129,26 @@ pkgs.testers.runNixOSTest {
     )
     forge.succeed("test -f /tmp/demo/README.md")
 
+    issue = json.loads(api_post("/repos/${adminUser}/demo/issues", {"title": "task"}))
+    project = json.loads(
+        api_post("/repos/${adminUser}/demo/projects", {"title": "plan", "card_type": "text_only"})
+    )
+    board = "/repos/${adminUser}/demo/projects/" + str(project["id"])
+    todo = json.loads(api_post(board + "/columns", {"title": "todo"}))
+    done = json.loads(api_post(board + "/columns", {"title": "done"}))
+    card = json.loads(
+        api_post(board + "/columns/" + str(todo["id"]) + "/issues", {"issue_id": issue["id"]})
+    )
+    assert card["project_column_id"] == todo["id"], card
+    api_send(
+        "PATCH",
+        board + "/columns/" + str(todo["id"]) + "/issues/" + str(card["id"]),
+        {"project_column_id": done["id"], "sorting": 0},
+    )
+    moved = json.loads(api_get(board + "/columns/" + str(done["id"]) + "/issues/" + str(card["id"])))
+    assert moved["project_column_id"] == done["id"], moved
+    assert moved["issue_id"] == issue["id"], moved
+
     api_send("PATCH", "/admin/users/${adminUser}", {"email": "drifted@example.com"})
     assert json.loads(api_get("/user"))["email"] == "drifted@example.com"
 
