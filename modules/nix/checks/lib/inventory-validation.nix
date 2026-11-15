@@ -1421,6 +1421,29 @@ let
       files = routedHostFiles { router = validHost "h-router" "tailnet_member = false;"; };
     };
 
+    tailnet-exit-node-accepts-member = {
+      desc = "a tailnet member can be an exit node";
+      expectFail = false;
+      files = {
+        "users/inventory-user.nix" = validUser "inventory-user";
+        "deployment-roles/compute-role.nix" = validDeploymentRole "compute-role";
+        "hosts/lab/h-exit.nix" = validHost "h-exit" "tailnet_exit_node = true;";
+      };
+    };
+
+    tailnet-exit-node-rejects-non-member = {
+      desc = "an exit node must be a tailnet member";
+      expectFail = true;
+      files = {
+        "users/inventory-user.nix" = validUser "inventory-user";
+        "deployment-roles/compute-role.nix" = validDeploymentRole "compute-role";
+        "hosts/lab/h-exit.nix" = validHost "h-exit" ''
+          tailnet_member = false;
+          tailnet_exit_node = true;
+        '';
+      };
+    };
+
     network-rejects-retired-tailnet-router = {
       desc = "a network tailnet router cannot be retired";
       expectFail = true;

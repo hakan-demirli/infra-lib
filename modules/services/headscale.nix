@@ -106,8 +106,6 @@ in
           };
         };
 
-        tailscale.extraUpFlags = [ "--advertise-exit-node" ];
-
         headscale-users = {
           enable = true;
           usersFile = "${aclPkg}/users";
@@ -128,11 +126,6 @@ in
           443
         ];
         inherit (cfg) allowedUDPPorts;
-      };
-
-      boot.kernel.sysctl = {
-        "net.ipv4.ip_forward" = 1;
-        "net.ipv6.conf.all.forwarding" = 1;
       };
     })
   ];

@@ -235,6 +235,7 @@ in
       metricsTag = "tag:metrics";
       nixCacheTag = "tag:nix-binary-cache";
       deployControllerTag = "tag:fleet-deploy-controller";
+      exitNodeTag = "tag:exit-node";
       inherit (inventory) deployController;
       fleetServicePorts = {
         logs = 9428;
@@ -252,6 +253,7 @@ in
         ])
       ) (attrValues hosts);
       hasAdminClients = adminClientHosts != [ ];
+      hasExitNodes = (inventory.tailnetExitNodes or [ ]) != [ ];
       exporterPortMap = import ./exporter-ports.nix;
       isMonitoredHost =
         h:
@@ -335,12 +337,21 @@ in
         }
         // optionalAttrs (deployController != null) {
           ${deployControllerTag} = [ "group:admin" ];
+        }
+        // optionalAttrs hasExitNodes {
+          ${exitNodeTag} = [ "group:admin" ];
         };
 
       adminRule = {
         action = "accept";
         src = [ (if hasAdminClients then fleetAdminTag else "group:admin") ];
         dst = (map (cid: "${broadTagOf cid}:*") (attrNames activeClusters)) ++ [ "tag:bootstrap:*" ];
+      };
+
+      exitNodeRule = {
+        action = "accept";
+        inherit (adminRule) src;
+        dst = [ "autogroup:internet:*" ];
       };
 
       monitoringRules = concatMap (
@@ -671,6 +682,7 @@ in
         adminRule
         driveRule
       ]
+      ++ optional hasExitNodes exitNodeRule
       ++ monitoringRules
       ++ logsRules
       ++ nixCacheRules
@@ -714,6 +726,18 @@ in
         }
       ];
 
+      autoApprovers =
+        optionalAttrs (subnetRoutes != [ ]) {
+          routes = listToAttrs (
+            map (
+              route: nameValuePair route.prefix [ (broadTagOf inventory.hostToCluster.${route.router}) ]
+            ) subnetRoutes
+          );
+        }
+        // optionalAttrs hasExitNodes {
+          exitNode = [ exitNodeTag ];
+        };
+
       policy = headscalePolicy.mk (
         {
           inherit
@@ -726,11 +750,9 @@ in
         }
         // optionalAttrs (subnetRoutes != [ ]) {
           hosts = listToAttrs (map (route: nameValuePair route.id route.prefix) subnetRoutes);
-          autoApprovers.routes = listToAttrs (
-            map (
-              route: nameValuePair route.prefix [ (broadTagOf inventory.hostToCluster.${route.router}) ]
-            ) subnetRoutes
-          );
+        }
+        // optionalAttrs (autoApprovers != { }) {
+          inherit autoApprovers;
         }
       );
 

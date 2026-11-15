@@ -1000,6 +1000,11 @@ let
         default = true;
         description = "Whether the host joins the tailnet; non-members get no cluster and no policy tag.";
       };
+      tailnet_exit_node = mkOption {
+        type = bool;
+        default = false;
+        description = "Whether the host offers its internet uplink to admin clients of the tailnet.";
+      };
       deploy = mkOption {
         type = submodule {
           options = {

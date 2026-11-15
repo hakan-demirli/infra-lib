@@ -9,6 +9,7 @@ let
   cfg = config.services.tailscale;
   hostLabels = if host == null then { } else (host.labels or { });
   authKeyDefault = (hostLabels.tailscale_auth_key or "true") == "true";
+  exitNodeDefault = host != null && (host.tailnet_exit_node or false);
   impermanenceEnabled = host != null && (host.impermanence.enable or false);
   inherit (cfg) authKeyFile;
   authKeyParameters = lib.pipe cfg.authKeyParameters [
@@ -36,6 +37,15 @@ in
         must carry their tags server-side.
       '';
     };
+    advertiseExitNode = lib.mkOption {
+      type = lib.types.bool;
+      default = exitNodeDefault;
+      description = ''
+        Whether to offer this node as a tailnet exit node.
+        Default follows the inventory host field `tailnet_exit_node`.
+        Headscale approves the exit routes only for nodes with `tag:exit-node`.
+      '';
+    };
   };
 
   config = {
@@ -44,7 +54,8 @@ in
     services.tailscale = {
       enable = true;
       authKeyFile = lib.mkIf cfg.useAuthKey config.sops.secrets.tailscale-key.path;
-      useRoutingFeatures = "client";
+      useRoutingFeatures = if cfg.advertiseExitNode then "both" else "client";
+      extraSetFlags = [ "--advertise-exit-node=${lib.boolToString cfg.advertiseExitNode}" ];
       extraUpFlags = [
         "--reset"
         "--login-server=https://${cfg.loginServerHost}"

@@ -87,6 +87,15 @@ let
     };
   };
   tailscaleAutoconnect = tailscaleAuth.systemd.services.tailscaled-autoconnect;
+  tailscaleExitNode = evalModule "/modules/services/tailscale.nix" {
+    imports = [ inputs.sops-nix.nixosModules.sops ];
+    networking.useHostResolvConf = lib.mkForce false;
+    services.tailscale = {
+      loginServerHost = "headscale.example";
+      useAuthKey = false;
+      advertiseExitNode = true;
+    };
+  };
   mungeSops = evalModule "/modules/services/munge-sops.nix" (
     { lib, ... }:
     {
@@ -336,6 +345,13 @@ let
       && lib.hasInfix "?ephemeral=true" tailscaleAutoconnect.script
       && !lib.hasInfix "cat /run/keys/tailscale" tailscaleAutoconnect.script
       && !lib.any (lib.hasPrefix "--advertise-tags") tailscaleAuth.services.tailscale.extraUpFlags;
+    tailscale-exit-node-is-declared =
+      tailscaleAuth.services.tailscale.extraSetFlags == [ "--advertise-exit-node=false" ]
+      && tailscaleAuth.services.tailscale.useRoutingFeatures == "client"
+      && tailscaleExitNode.services.tailscale.extraSetFlags == [ "--advertise-exit-node=true" ]
+      && tailscaleExitNode.services.tailscale.useRoutingFeatures == "both"
+      && tailscaleExitNode.boot.kernel.sysctl."net.ipv4.conf.all.forwarding"
+      && tailscaleExitNode.boot.kernel.sysctl."net.ipv6.conf.all.forwarding";
     munge-sops-uses-owned-runtime-key =
       mungeSops.services.munge.password == "/run/munge/munge.key"
       && lib.elem "sops-install-secrets.service" mungeService.after

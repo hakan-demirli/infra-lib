@@ -93,6 +93,7 @@ let
     };
     deployController = "admin-client";
     deployableHosts = [ "admin-client" ];
+    tailnetExitNodes = [ "controller" ];
   };
   adminCodegen = self.lib.mkCodegen {
     inventory = adminInventory;
@@ -137,6 +138,14 @@ pkgs.testers.runNixOSTest {
         and "tag:bootstrap:*" in rule["dst"]
         for rule in admin_policy["acls"]
     ), admin_policy
+    assert "autoApprovers" not in policy, policy
+    assert "tag:exit-node" not in policy["tagOwners"], policy
+    assert not any("autogroup:internet:*" in rule["dst"] for rule in policy["acls"]), policy
+    assert admin_policy["autoApprovers"] == {"exitNode": ["tag:exit-node"]}, admin_policy
+    assert admin_policy["tagOwners"]["tag:exit-node"] == ["group:admin"], admin_policy
+    assert {"action": "accept", "src": ["tag:fleet-admin-client"], "dst": [
+        "autogroup:internet:*",
+    ]} in admin_policy["acls"], admin_policy
     assert admin_policy["tagOwners"]["tag:metrics"] == ["group:admin"], admin_policy
     assert any(
         "tag:cluster-personal-controller" in rule["src"]

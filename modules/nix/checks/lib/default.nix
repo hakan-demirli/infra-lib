@@ -78,6 +78,7 @@
   cluster-isolation = import ./cluster-isolation.nix { inherit pkgs self; };
   subnet-routes = import ./subnet-routes.nix { inherit pkgs self; };
   subnet-route-access = import ./subnet-route-access.nix { inherit pkgs self; };
+  exit-node-access = import ./exit-node-access.nix { inherit pkgs self inputs; };
   bootstrap-tag = import ./bootstrap-tag.nix { inherit pkgs; };
   taildrive = import ./taildrive.nix { inherit pkgs; };
   harmonia = import ./harmonia.nix { inherit pkgs; };

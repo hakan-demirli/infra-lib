@@ -619,6 +619,12 @@ let
       ) "host '${h.id}' virtualization currently supports only x86_64-linux")
     ];
 
+  hostTailnetExitNodeContract =
+    h:
+    optional (
+      h.tailnet_exit_node && !h.tailnet_member
+    ) "host '${h.id}' sets tailnet_exit_node but is not a tailnet member";
+
   hostDeploymentRoleRefs =
     h:
     map (
@@ -1282,6 +1288,7 @@ let
     (mapAttrsToList (_: hostMonitoringContract) hosts)
     (mapAttrsToList (_: hostSlurmContract) hosts)
     (mapAttrsToList (_: hostVirtContract) hosts)
+    (mapAttrsToList (_: hostTailnetExitNodeContract) hosts)
     (mapAttrsToList (_: teamMemberRefs) explicitTeams)
     (mapAttrsToList (_: teamMaintainerRefs) explicitTeams)
     (mapAttrsToList (_: clusterOwnershipRefs) explicitClusters)
@@ -1348,6 +1355,9 @@ let
     usersOnCluster = mapAttrs (cid: _: usersOnCluster cid) clusters;
     activeDeploymentRoles = attrNames hostsByDeploymentRole;
     deployableHosts = attrNames deployableHosts;
+    tailnetExitNodes = attrNames (
+      filterAttrs (_: h: h.tailnet_exit_node && h.state != "retired") hosts
+    );
     deployController = if deployControllers == [ ] then null else head deployControllers;
 
     hostTopologyRoles = mapAttrs (_: h: sort lessThan (unique h.topology_roles)) hosts;
