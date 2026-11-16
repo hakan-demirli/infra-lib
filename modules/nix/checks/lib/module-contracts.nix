@@ -7,13 +7,12 @@ let
   inherit (pkgs) lib;
   inherit (pkgs.stdenv.hostPlatform) system;
 
-  evalModule =
-    module: extraModule:
+  evalModuleOn =
+    host: module: extraModule:
     (inputs.nixpkgs.lib.nixosSystem {
       inherit system;
       specialArgs = {
-        inherit inputs;
-        host = null;
+        inherit inputs host;
         cluster = null;
       };
       modules = [
@@ -26,6 +25,7 @@ let
         extraModule
       ];
     }).config;
+  evalModule = evalModuleOn null;
 
   hasFailure =
     needle: evaluated:
@@ -220,6 +220,37 @@ let
         inherit tailnetOnly;
       };
     };
+  beesOn =
+    hardware: rootFsType:
+    evalModuleOn { inherit hardware; } "/modules/services/bees.nix" {
+      fileSystems."/" = {
+        device = "/dev/root_vg/root";
+        fsType = rootFsType;
+      };
+    };
+  beesHybrid = beesOn {
+    cpu_sockets = 1;
+    cpu_cores_per_socket = 12;
+    cpu_threads_per_core = 2;
+    cpu_logical_count = 20;
+    ram_mib = 65536;
+  } "btrfs";
+  beesHomogeneous = beesOn {
+    cpu_sockets = 2;
+    cpu_cores_per_socket = 16;
+    cpu_threads_per_core = 2;
+    cpu_logical_count = null;
+    ram_mib = 131072;
+  } "btrfs";
+  smallHardware = {
+    cpu_sockets = 1;
+    cpu_cores_per_socket = 2;
+    cpu_threads_per_core = 1;
+    cpu_logical_count = null;
+    ram_mib = 2048;
+  };
+  beesSmall = beesOn smallHardware "btrfs";
+  beesExt4 = beesOn smallHardware "ext4";
 
   checks = {
     intel-host-loads-intel-microcode =
@@ -431,6 +462,33 @@ let
         services.remotedesktop.connector = "HDMI-A-1";
       }
     );
+    bees-derives-limits-from-inventory =
+      let
+        root = beesHybrid.services.beesd.filesystems.root;
+        unit = beesHybrid.systemd.services."beesd@root".serviceConfig;
+        limits = [
+          "--loadavg-target"
+          "20"
+          "--thread-min"
+          "1"
+          "--throttle-factor"
+          "2.0"
+        ];
+      in
+      !hasFailure "must be btrfs" beesHybrid
+      && root.spec == "/"
+      && root.hashTableSizeMB == 1024
+      && root.verbosity == 4
+      && root.extraOptions == limits
+      && unit.OOMScoreAdjust == 1000
+      && unit.RestartSec == "5min";
+    bees-counts-every-thread-of-homogeneous-cpus =
+      let
+        root = beesHomogeneous.services.beesd.filesystems.root;
+      in
+      root.hashTableSizeMB == 2048 && lib.elemAt root.extraOptions 1 == "64";
+    bees-keeps-a-minimum-hash-table = beesSmall.services.beesd.filesystems.root.hashTableSizeMB == 128;
+    bees-rejects-non-btrfs-root = hasFailure "must be btrfs" beesExt4;
   };
 
   failures = lib.attrNames (lib.filterAttrs (_: passed: !passed) checks);
