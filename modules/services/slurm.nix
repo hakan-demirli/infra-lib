@@ -9,6 +9,7 @@
 let
   cfg = config.services.slurm-cluster;
   ports = import ../lib/slurm-ports.nix;
+  hardware = import ../lib/hardware.nix;
   hasMungeSecret = lib.hasAttrByPath [ "sops" "secrets" "munge-key" ] config;
   clusterId =
     if host == null || cluster == null then null else (cluster.hostToCluster.${host.id} or null);
@@ -33,7 +34,7 @@ let
       sockets = node.hardware.cpu_sockets;
       coresPerSocket = node.hardware.cpu_cores_per_socket;
       threadsPerCore = node.hardware.cpu_threads_per_core;
-      cpuLogicalCount = node.hardware.cpu_logical_count;
+      cpus = hardware.logicalCpus node.hardware;
       ramMb = node.hardware.ram_mib;
       features = node.slurm_features;
       gres = node.slurm_gres;
@@ -50,14 +51,10 @@ let
   }";
   nodeLine =
     node:
-    let
-      derived = node.sockets * node.coresPerSocket * node.threadsPerCore;
-      cpus = if node.cpuLogicalCount != null then node.cpuLogicalCount else derived;
-    in
     lib.concatStringsSep " " (
       [
         node.hostName
-        "CPUs=${toString cpus}"
+        "CPUs=${toString node.cpus}"
         "Sockets=${toString node.sockets}"
         "CoresPerSocket=${toString node.coresPerSocket}"
         "ThreadsPerCore=${toString node.threadsPerCore}"
