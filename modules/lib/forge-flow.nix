@@ -12,6 +12,17 @@ let
     patches = [ ./patches/nixbot-flake-update-fast-forward-only.patch ];
   };
   effects = import "${source}/herculesCI/effects-lib.nix" { inherit pkgs; };
+
+  # automatic merges the lock update once its checks pass; manual leaves it for review.
+  merge =
+    update.merge or (throw "mkForgeFlow: update.merge is required: \"automatic\" or \"manual\"");
+  autoMergeMethod =
+    {
+      automatic = "fast-forward-only";
+      manual = null;
+    }
+    .${merge}
+      or (throw "mkForgeFlow: update.merge must be \"automatic\" or \"manual\", not ${builtins.toJSON merge}");
 in
 {
   onPush.default.outputs.effects = lib.optionalAttrs (primaryRepo.branch == "unstable") {
@@ -60,7 +71,7 @@ in
   };
 
   onSchedule.update-flake-inputs = {
-    when = update;
+    when = removeAttrs update [ "merge" ];
     outputs.effects.update =
       (effects.flakeUpdate {
         forgeType = "gitea";
@@ -68,7 +79,7 @@ in
         # Each run starts over from the channel instead of reusing a stale branch.
         baseMergeBranch = "unstable";
         baseMergeMethod = "reset";
-        autoMergeMethod = "fast-forward-only";
+        inherit autoMergeMethod;
         pullRequestTitle = "chore: update flake inputs";
         commitSummary = "chore: update flake inputs";
       }).overrideAttrs

@@ -16,6 +16,7 @@ in
       update = {
         hour = 4;
         minute = 17;
+        merge = "automatic";
       };
     };
 }
