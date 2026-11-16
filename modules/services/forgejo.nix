@@ -13,7 +13,7 @@ let
   # The project API of forgejo/forgejo#13714, which no Forgejo release has yet.
   # Its tests expect the Go 1.27 toolchain that the branch pins.
   package =
-    pkgs.callPackage
+    (pkgs.callPackage
       (import "${pkgs.path}/pkgs/by-name/fo/forgejo/generic.nix" {
         version = "18.0.0-dev-288-2d12edec";
         rev = "2d12edec93f56743a2ad5519be86e61d707aa11e";
@@ -24,7 +24,12 @@ let
       {
         forgejo = package;
         buildGoModule = pkgs.buildGo127Module;
-      };
+      }
+    ).overrideAttrs
+      (old: {
+        # The branch already has the upstream commit of nixpkgs' go_1_27.patch.
+        patches = lib.filter (patch: (patch.name or "") != "go_1_27.patch") old.patches;
+      });
 
   useSops = cfg.admin.password.source == "sops";
   sopsKeyName =
