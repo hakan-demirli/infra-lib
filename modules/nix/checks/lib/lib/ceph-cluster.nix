@@ -344,10 +344,8 @@ let
                 f"systemctl start ceph-mds-{name}",
             )
             node.wait_for_unit(f"ceph-mds-{name}", timeout=60)
-        storage_a.wait_until_succeeds(
-            "ceph mds stat | grep -E 'up:(active|creating|reconnect|rejoin|clientreplay)'",
-            timeout=180,
-        )
+        # Clients mount only once an MDS is active; creating and the recovery states are not enough.
+        storage_a.wait_until_succeeds("ceph mds stat | grep -q 'up:active'", timeout=180)
 
     with subtest("[cluster fixture] HEALTH ready (OK or WARN)"):
         storage_a.wait_until_succeeds(

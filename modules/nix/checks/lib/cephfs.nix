@@ -301,10 +301,8 @@ pkgs.testers.runNixOSTest {
         print(storage_a.succeed("ceph fs status || true"))
         print("--- ceph -s ---")
         print(storage_a.succeed("ceph -s || true"))
-        storage_a.wait_until_succeeds(
-            "ceph mds stat | grep -E 'up:(active|creating|reconnect|rejoin|clientreplay)'",
-            timeout=180,
-        )
+        # Clients mount only once an MDS is active; creating and the recovery states are not enough.
+        storage_a.wait_until_succeeds("ceph mds stat | grep -q 'up:active'", timeout=180)
         storage_a.wait_until_succeeds(
             "ceph -s | grep -E 'HEALTH_(OK|WARN)'", timeout=60
         )
