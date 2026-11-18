@@ -22,8 +22,15 @@ pkgs.testers.runNixOSTest {
       { nodes, ... }:
       {
         imports = [ common ];
-        system.extraDependencies = [ nodes.unhealthy.system.build.toplevel ];
+        system.extraDependencies = [
+          nodes.unhealthy.system.build.toplevel
+          nodes.updated.system.build.toplevel
+        ];
       };
+    updated = {
+      imports = [ common ];
+      systemd.services.systemd-bless-boot.environment.SYSTEMD_LOG_LEVEL = "debug";
+    };
     unhealthy =
       { lib, ... }:
       {
@@ -37,6 +44,7 @@ pkgs.testers.runNixOSTest {
     ''
       healthy = "${nodes.machine.system.build.toplevel}"
       unhealthy = "${nodes.unhealthy.system.build.toplevel}"
+      updated = "${nodes.updated.system.build.toplevel}"
 
       def booted(toplevel):
           machine.succeed(f'test "$(readlink -f /run/current-system)" = {toplevel}')
@@ -58,6 +66,9 @@ pkgs.testers.runNixOSTest {
       machine.succeed("systemctl restart sshd.service")
       machine.wait_for_unit("sshd.service")
       assert blessing() == blessed, "restarting sshd re-ran systemd-bless-boot"
+
+      machine.succeed(f"{updated}/bin/switch-to-configuration test")
+      assert blessing() == blessed, "switching to an updated systemd-bless-boot re-ran it"
 
       machine.succeed(f"nix-env -p /nix/var/nix/profiles/system --set {unhealthy}")
       machine.succeed(f"{unhealthy}/bin/switch-to-configuration boot")

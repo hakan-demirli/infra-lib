@@ -34,6 +34,11 @@ in
     grub.efiInstallAsRemovable = lib.mkIf grubEfi (lib.mkDefault (registration == "fallback"));
   };
 
+  systemd.services.systemd-bless-boot = lib.mkIf countsBoots {
+    restartIfChanged = false;
+    unitConfig.X-StopOnRemoval = false;
+  };
+
   systemd.services.boot-health-check = lib.mkIf (countsBoots && bootHealthUnits != [ ]) {
     description = "Check that remote access started before the boot is marked good";
     wants = bootHealthUnits;
