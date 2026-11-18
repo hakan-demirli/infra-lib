@@ -193,6 +193,11 @@ in
         };
       };
 
+      systemd.services.slurmd = lib.mkIf isCompute {
+        requires = [ "munged.service" ];
+        after = [ "munged.service" ];
+      };
+
       environment.etc."munge/munge.key" = lib.mkIf (!hasMungeSecret && cfg.allowInsecureTestKey) {
         text = fallbackMungeKey;
         mode = "0400";
