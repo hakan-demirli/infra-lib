@@ -455,11 +455,18 @@ in
             ct
           ];
         in
-        optional (controllerTag != null) {
-          action = "accept";
-          src = [ broad ];
-          dst = [ "${controllerTag}:${toString slurmPorts.controller}" ];
-        }
+        optionals (controllerTag != null) [
+          {
+            action = "accept";
+            src = [ broad ];
+            dst = [ "${controllerTag}:${toString slurmPorts.controller}" ];
+          }
+          {
+            action = "accept";
+            src = [ broad ];
+            dst = [ "${controllerTag}:${toString slurmPorts.accounting}" ];
+          }
+        ]
         ++ optional (ct != null) {
           action = "accept";
           src = [ broad ];

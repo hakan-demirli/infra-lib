@@ -139,6 +139,7 @@ let
     rule:
     lib.elem rule.reason [
       "slurmctld"
+      "slurmdbd"
       "slurmd"
       "srun"
     ]
@@ -160,6 +161,10 @@ let
     admin-client-receives-srun-callbacks = lib.any (
       rule: rule.reason == "srun" && rule.dst == "tag:fleet-admin-client"
     ) slurmRules;
+    cluster-reaches-slurmdbd-on-controller = lib.any (
+      rule:
+      rule.reason == "slurmdbd" && rule.dst == "tag:cluster-c-slurm-controller" && rule.port == "6819"
+    ) slurmRules;
   };
 
   failures = lib.attrNames (lib.filterAttrs (_: passed: !passed) checks);
@@ -180,7 +185,7 @@ pkgs.runCommand "intent-slurm-daemons"
     grep -v '^//' ${policy} > policy.json
     jq -e --slurpfile rules "$rulesPath" '
       .acls as $acls
-      | ($rules[0] | length) == 4
+      | ($rules[0] | length) == 5
       and ($rules[0] | all(
           . as $rule
           | $acls | any(

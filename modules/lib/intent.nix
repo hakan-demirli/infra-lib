@@ -249,9 +249,10 @@ let
         ct
       ];
     in
-    optional (controllerTag != null) (
-      mkRule [ broad ] controllerTag (toString slurmPorts.controller) "slurmctld"
-    )
+    optionals (controllerTag != null) [
+      (mkRule [ broad ] controllerTag (toString slurmPorts.controller) "slurmctld")
+      (mkRule [ broad ] controllerTag (toString slurmPorts.accounting) "slurmdbd")
+    ]
     ++ optional (ct != null) (mkRule [ broad ] ct (toString slurmPorts.node) "slurmd")
     ++ optionals (daemonTags != [ ]) (
       map (tag: mkRule daemonTags tag slurmPorts.srun "srun") submitTags
@@ -639,6 +640,7 @@ let
         ) sources;
     in
     paths "slurmctld" (toString slurmPorts.controller) (unique (nodes ++ submitHosts)) controllers
+    ++ paths "slurmdbd" (toString slurmPorts.accounting) (unique (nodes ++ submitHosts)) controllers
     ++ paths "slurmd" (toString slurmPorts.node) (unique (controllers ++ submitHosts)) nodes
     ++ paths "srun" slurmPorts.srun (unique (controllers ++ nodes)) submitHosts
   ) (attrNames slurmClusters);

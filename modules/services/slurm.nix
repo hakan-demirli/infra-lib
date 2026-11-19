@@ -23,6 +23,9 @@ let
   isMaster = host != null && lib.elem host.id controllers;
   isCompute = host != null && lib.elem host.id partitionHosts;
   masterHostname = if controllers == [ ] then "" else lib.head controllers;
+  accountingDatabase = "slurm_acct_db";
+  accountingDatabaseSocket = "/run/mysqld/mysqld.sock";
+  accountingBufferPoolMib = lib.min 4096 (host.hardware.ram_mib / 4);
 
   nodeAttrsFor =
     hostId:
@@ -173,6 +176,14 @@ in
         slurm = {
           server.enable = isMaster;
           client.enable = isCompute;
+          dbdserver = lib.mkIf isMaster {
+            enable = true;
+            extraConfig = ''
+              DbdPort=${toString ports.accounting}
+              StorageHost=unix:${accountingDatabaseSocket}
+              StorageLoc=${accountingDatabase}
+            '';
+          };
           controlMachine = masterHostname;
           clusterName = if clusterRec == null then "" else clusterRec.id;
           procTrackType = "proctrack/pgid";
@@ -189,13 +200,41 @@ in
             SlurmctldPort=${toString ports.controller}
             SlurmdPort=${toString ports.node}
             SrunPortRange=${ports.srun}
+            AccountingStorageType=accounting_storage/slurmdbd
+            AccountingStorageHost=${masterHostname}
+            AccountingStoragePort=${toString ports.accounting}
+            JobAcctGatherType=jobacct_gather/linux
           '';
+        };
+
+        mysql = lib.mkIf isMaster {
+          enable = true;
+          package = pkgs.mariadb;
+          ensureDatabases = [ accountingDatabase ];
+          ensureUsers = [
+            {
+              name = config.services.slurm.user;
+              ensurePermissions."${accountingDatabase}.*" = "ALL PRIVILEGES";
+            }
+          ];
+          # slurmdbd logs an error below these InnoDB values and stops on a snapshot isolation conflict.
+          settings.mysqld = {
+            skip-networking = true;
+            innodb_buffer_pool_size = "${toString accountingBufferPoolMib}M";
+            innodb_lock_wait_timeout = 900;
+            innodb_snapshot_isolation = false;
+          };
         };
       };
 
       systemd.services.slurmd = lib.mkIf isCompute {
         requires = [ "munged.service" ];
         after = [ "munged.service" ];
+      };
+
+      systemd.services.slurmctld = lib.mkIf isMaster {
+        wants = [ "slurmdbd.service" ];
+        after = [ "slurmdbd.service" ];
       };
 
       environment.etc."munge/munge.key" = lib.mkIf (!hasMungeSecret && cfg.allowInsecureTestKey) {

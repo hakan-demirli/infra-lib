@@ -170,6 +170,9 @@ pkgs.testers.runNixOSTest {
         "tag:cluster-personal-controller:6817",
     ]} in admin_policy["acls"], admin_policy
     assert {"action": "accept", "src": ["tag:cluster-personal"], "dst": [
+        "tag:cluster-personal-controller:6819",
+    ]} in admin_policy["acls"], admin_policy
+    assert {"action": "accept", "src": ["tag:cluster-personal"], "dst": [
         "tag:cluster-personal-compute:6818",
     ]} in admin_policy["acls"], admin_policy
     assert {"action": "accept", "src": ["tag:cluster-personal"], "dst": [
@@ -188,7 +191,7 @@ pkgs.testers.runNixOSTest {
         "tag:fleet-admin-client:60001-63000",
     ]} in admin_policy["acls"], admin_policy
     assert not any(
-        dst.endswith((":6817", ":6818", ":60001-63000"))
+        dst.endswith((":6817", ":6818", ":6819", ":60001-63000"))
         for rule in policy["acls"]
         for dst in rule["dst"]
     ), policy

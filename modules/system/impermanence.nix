@@ -35,7 +35,9 @@ let
     "/etc/machine-id"
     "/var/lib/systemd/credential.secret"
   ];
-  serviceStatePaths = lib.optional config.services.slurm.server.enable config.services.slurm.stateSaveLocation;
+  serviceStatePaths =
+    lib.optional config.services.slurm.server.enable config.services.slurm.stateSaveLocation
+    ++ lib.optional config.services.mysql.enable config.services.mysql.dataDir;
   systemPaths =
     defaultSystemPaths ++ serviceStatePaths ++ cfg.persistentDirs ++ hostImpermanence.persisted_paths;
   declaredSystemFiles = defaultSystemFiles ++ hostImpermanence.persisted_files;

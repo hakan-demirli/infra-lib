@@ -77,6 +77,9 @@ in
           SlurmctldPort=${toString ports.controller}
           SlurmdPort=${toString ports.node}
           SrunPortRange=${ports.srun}
+          AccountingStorageType=accounting_storage/slurmdbd
+          AccountingStorageHost=${masterHostname}
+          AccountingStoragePort=${toString ports.accounting}
         '';
       };
     };

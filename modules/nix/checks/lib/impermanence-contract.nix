@@ -152,6 +152,12 @@ let
   slurmController = evalImpermanence {
     extraModule.services.slurm.server.enable = true;
   };
+  database = evalImpermanence {
+    extraModule.services.mysql = {
+      enable = true;
+      package = pkgs.mariadb;
+    };
+  };
   systemDirectoryPaths =
     evaluated:
     map (
@@ -221,6 +227,9 @@ let
         systemDirectoryPaths slurmController
       )
       && !lib.elem valid.config.services.slurm.stateSaveLocation (systemDirectoryPaths valid);
+    database-state-is-persistent =
+      lib.elem database.config.services.mysql.dataDir (systemDirectoryPaths database)
+      && !lib.elem valid.config.services.mysql.dataDir (systemDirectoryPaths valid);
     persisted-files-survive-switch =
       lib.all (unit: !ssh.config.systemd.services.${unit}.restartIfChanged)
         (lib.filter (lib.hasPrefix "persist-persist-system-") (lib.attrNames ssh.config.systemd.services));
